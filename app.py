@@ -145,7 +145,8 @@ def process_xotelo_response(response, hotel_name, currency_converter, target_cur
     Returns:
         pd.DataFrame: DataFrame con i dati delle tariffe
     """
-    if response["error"] is not None or response["result"] is None:
+    # Verifica se la risposta contiene un errore o non ha risultati
+    if response.get("error") is not None or response.get("result") is None:
         # Creiamo un DataFrame "vuoto" con un messaggio per hotel non disponibili
         return pd.DataFrame([{
             "hotel": hotel_name,
@@ -158,13 +159,13 @@ def process_xotelo_response(response, hotel_name, currency_converter, target_cur
             "check_in": "",
             "check_out": "",
             "timestamp": 0,
-            "available": False,
+            "is_available": False,  # Cambiata da "available" a "is_available" per evitare confusioni
             "message": "Dati non disponibili/sold out"
         }])
     
-    rates = response["result"].get("rates", [])
-    check_in = response["result"].get("chk_in", "")
-    check_out = response["result"].get("chk_out", "")
+    rates = response.get("result", {}).get("rates", [])
+    check_in = response.get("result", {}).get("chk_in", "")
+    check_out = response.get("result", {}).get("chk_out", "")
     
     # Se non ci sono tariffe, consideriamolo come non disponibile
     if not rates:
@@ -178,8 +179,8 @@ def process_xotelo_response(response, hotel_name, currency_converter, target_cur
             "currency": target_currency,
             "check_in": check_in,
             "check_out": check_out,
-            "timestamp": response["timestamp"],
-            "available": False,
+            "timestamp": response.get("timestamp", 0),
+            "is_available": False,  # Cambiata da "available" a "is_available"
             "message": "Dati non disponibili/sold out"
         }])
     
@@ -200,8 +201,8 @@ def process_xotelo_response(response, hotel_name, currency_converter, target_cur
             "currency": target_currency,
             "check_in": check_in,
             "check_out": check_out,
-            "timestamp": response["timestamp"],
-            "available": True,
+            "timestamp": response.get("timestamp", 0),
+            "is_available": True,  # Cambiata da "available" a "is_available"
             "message": ""
         })
     
@@ -313,14 +314,21 @@ def rate_checker_app():
                 # Combina tutti i DataFrame
                 combined_df = pd.concat(all_data, ignore_index=True)
                 
+                # Verifica che tutte le colonne necessarie esistano
+                required_columns = ["hotel", "ota", "price_night", "price_total", "is_available", "message"]
+                for col in required_columns:
+                    if col not in combined_df.columns:
+                        st.error(f"Colonna '{col}' mancante nei dati. Impossibile continuare.")
+                        return
+                
                 # Memorizza i dati nella sessione
                 st.session_state.rate_data = combined_df
                 st.session_state.currency = currency
                 st.session_state.num_nights = num_nights
                 
                 # Conteggia gli hotel disponibili e non disponibili
-                available_hotels = combined_df[combined_df["available"]]["hotel"].unique()
-                unavailable_hotels = combined_df[~combined_df["available"]]["hotel"].unique()
+                available_hotels = combined_df[combined_df["is_available"]]["hotel"].unique()
+                unavailable_hotels = combined_df[~combined_df["is_available"]]["hotel"].unique()
                 
                 if len(unavailable_hotels) > 0:
                     st.warning(f"Hotel non disponibili: {', '.join(unavailable_hotels)}")
@@ -333,6 +341,16 @@ def rate_checker_app():
     if "rate_data" in st.session_state:
         # Ottieni il DataFrame
         df = st.session_state.rate_data
+        
+        # Verifica che tutte le colonne necessarie esistano
+        required_columns = ["hotel", "ota", "price_night", "price_total", "is_available"]
+        all_columns_exist = all(col in df.columns for col in required_columns)
+        
+        if not all_columns_exist:
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            st.error(f"Colonne mancanti nei dati: {', '.join(missing_columns)}. Esegui nuovamente la ricerca.")
+            return
+        
         current_currency = st.session_state.currency
         
         # Aggiorna il conteggio delle notti se è cambiato
@@ -348,13 +366,13 @@ def rate_checker_app():
             # Converti i prezzi alla nuova valuta
             if currency == "USD" and current_currency == "EUR":
                 df["price_night"] = df.apply(
-                    lambda row: currency_converter.convert(row["price_night"], "EUR", "USD") if row["available"] else 0, 
+                    lambda row: currency_converter.convert(row["price_night"], "EUR", "USD") if row["is_available"] else 0, 
                     axis=1
                 )
                 df["price_total"] = df["price_night"] * num_nights
             elif currency == "EUR" and current_currency == "USD":
                 df["price_night"] = df.apply(
-                    lambda row: currency_converter.convert(row["price_night"], "USD", "EUR") if row["available"] else 0, 
+                    lambda row: currency_converter.convert(row["price_night"], "USD", "EUR") if row["is_available"] else 0, 
                     axis=1
                 )
                 df["price_total"] = df["price_night"] * num_nights
@@ -372,7 +390,7 @@ def rate_checker_app():
         st.header(f"Confronto tariffe tra OTA (Prezzi {price_description})")
         
         # Filtra solo hotel disponibili per la selezione
-        available_hotels = df[df["available"]]["hotel"].unique()
+        available_hotels = df[df["is_available"]]["hotel"].unique()
         
         if len(available_hotels) > 0:
             # Seleziona l'hotel da analizzare
@@ -382,7 +400,7 @@ def rate_checker_app():
             )
             
             # Filtra per l'hotel selezionato
-            hotel_df = df[(df["hotel"] == selected_hotel) & df["available"]]
+            hotel_df = df[(df["hotel"] == selected_hotel) & df["is_available"]]
             
             if not hotel_df.empty:
                 # Conteggio OTA disponibili
@@ -449,7 +467,7 @@ def rate_checker_app():
             st.header(f"Confronto tra hotel (Prezzi {price_description})")
             
             # Filtra solo hotel disponibili
-            available_df = df[df["available"]]
+            available_df = df[df["is_available"]]
             
             if not available_df.empty:
                 # Trova il prezzo minimo e quali OTA offrono il prezzo minimo per ciascun hotel
@@ -565,10 +583,10 @@ def rate_checker_app():
                     st.dataframe(display_df, use_container_width=True)
             
             # Mostra hotel non disponibili
-            unavailable_hotels = df[~df["available"]]["hotel"].unique()
+            unavailable_hotels = df[~df["is_available"]]["hotel"].unique()
             if len(unavailable_hotels) > 0:
                 st.header("Hotel non disponibili")
-                unavailable_df = df[~df["available"]][["hotel", "message"]].drop_duplicates()
+                unavailable_df = df[~df["is_available"]][["hotel", "message"]].drop_duplicates()
                 st.warning(f"I seguenti hotel non hanno disponibilità: {', '.join(unavailable_hotels)}")
                 st.dataframe(unavailable_df, use_container_width=True)
         else:
