@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import requests
 import json
+import time
 
 # Configurazione pagina
 st.set_page_config(
@@ -14,22 +15,24 @@ st.set_page_config(
     layout="wide"
 )
 
+# Abilita modalità debug
+DEBUG_MODE = st.sidebar.checkbox("Modalità Debug", value=False)
+
+# Funzione per log condizionale
+def debug_log(message):
+    if DEBUG_MODE:
+        st.text(f"DEBUG: {message}")
+
 # Classe per l'integrazione con Xotelo API
 class XoteloAPI:
     def __init__(self):
         self.base_url = "https://data.xotelo.com/api"
+        if DEBUG_MODE:
+            st.write("🔌 API Xotelo inizializzata")
     
     def get_rates(self, hotel_key, check_in, check_out):
         """
         Ottieni le tariffe per un hotel specifico
-        
-        Args:
-            hotel_key (str): Chiave TripAdvisor dell'hotel
-            check_in (str): Data di check-in formato YYYY-MM-DD
-            check_out (str): Data di check-out formato YYYY-MM-DD
-            
-        Returns:
-            dict: Dati tariffari in formato JSON
         """
         endpoint = f"{self.base_url}/rates"
         params = {
@@ -38,23 +41,26 @@ class XoteloAPI:
             "chk_out": check_out
         }
         
+        if DEBUG_MODE:
+            st.write(f"🔍 Richiesta tariffe per: {hotel_key}")
+            st.write(f"📅 Check-in: {check_in}, Check-out: {check_out}")
+            start_time = time.time()
+        
         try:
             response = requests.get(endpoint, params=params)
+            if DEBUG_MODE:
+                end_time = time.time()
+                st.write(f"⏱️ Tempo di risposta API: {end_time - start_time:.2f} secondi")
+                st.write(f"📊 Stato risposta: {response.status_code}")
             return response.json()
         except Exception as e:
+            if DEBUG_MODE:
+                st.error(f"❌ Errore API: {str(e)}")
             return {"error": str(e), "timestamp": 0, "result": None}
     
     def get_hotel_list(self, location_key, offset=0, limit=30):
         """
         Ottieni un elenco di hotel in base alla posizione
-        
-        Args:
-            location_key (str): Chiave TripAdvisor della località
-            offset (int): Offset per la paginazione
-            limit (int): Numero massimo di risultati
-            
-        Returns:
-            dict: Elenco di hotel in formato JSON
         """
         endpoint = f"{self.base_url}/list"
         params = {
@@ -63,14 +69,22 @@ class XoteloAPI:
             "limit": limit
         }
         
+        if DEBUG_MODE:
+            st.write(f"🔍 Richiesta elenco hotel per località: {location_key}")
+            start_time = time.time()
+        
         try:
             response = requests.get(endpoint, params=params)
+            if DEBUG_MODE:
+                end_time = time.time()
+                st.write(f"⏱️ Tempo di risposta API: {end_time - start_time:.2f} secondi")
             return response.json()
         except Exception as e:
+            if DEBUG_MODE:
+                st.error(f"❌ Errore API: {str(e)}")
             return {"error": str(e), "timestamp": 0, "result": None}
 
 # Dizionario delle chiavi TripAdvisor per gli hotel competitor
-# Queste dovrebbero essere sostituite con le chiavi reali
 hotel_keys = {
     "VOI Alimini": "g652004-d1799967",  
     "Ciaoclub Arco Del Saracino": "g946998-d947000", 
@@ -82,20 +96,24 @@ hotel_keys = {
 def process_xotelo_response(response, hotel_name):
     """
     Elabora la risposta dell'API Xotelo e la converte in un DataFrame
-    
-    Args:
-        response (dict): Risposta JSON dell'API
-        hotel_name (str): Nome dell'hotel
-        
-    Returns:
-        pd.DataFrame: DataFrame con i dati delle tariffe
     """
+    if DEBUG_MODE:
+        st.write(f"🔄 Elaborazione risposta per {hotel_name}")
+        if response["error"] is not None:
+            st.warning(f"⚠️ API ha restituito un errore: {response['error']}")
+    
     if response["error"] is not None or response["result"] is None:
+        if DEBUG_MODE:
+            st.error(f"❌ Nessun dato disponibile per {hotel_name}")
         return pd.DataFrame()
     
     rates = response["result"].get("rates", [])
     check_in = response["result"].get("chk_in", "")
     check_out = response["result"].get("chk_out", "")
+    
+    if DEBUG_MODE:
+        st.write(f"📈 Trovate {len(rates)} tariffe per {hotel_name}")
+        st.write(f"🗓️ Periodo: {check_in} - {check_out}")
     
     data = []
     for rate in rates:
@@ -109,12 +127,31 @@ def process_xotelo_response(response, hotel_name):
             "timestamp": response["timestamp"]
         })
     
-    return pd.DataFrame(data)
+    df = pd.DataFrame(data)
+    
+    if DEBUG_MODE:
+        if not df.empty:
+            st.write(f"✅ DataFrame creato con successo: {df.shape[0]} righe x {df.shape[1]} colonne")
+            st.write("Esempio di dati:")
+            st.dataframe(df.head(3))
+        else:
+            st.warning("⚠️ DataFrame vuoto creato")
+    
+    return df
 
 # Applicazione Streamlit
 def rate_checker_app():
     st.title("Rate Checker VOI Alimini con Xotelo API")
     st.subheader("Confronto tariffe basato su TripAdvisor")
+    
+    # Mostra stato attuale
+    if DEBUG_MODE:
+        st.write("🔧 MODALITÀ DEBUG ATTIVA")
+        st.write("📋 Stato della sessione:")
+        st.write(f"- Dati tariffari presenti: {'rate_data' in st.session_state}")
+        if 'rate_data' in st.session_state:
+            st.write(f"- Numero di record: {len(st.session_state.rate_data)}")
+            st.write(f"- Hotel disponibili: {list(st.session_state.rate_data['hotel'].unique())}")
     
     # Sidebar per i controlli
     st.sidebar.header("Parametri di ricerca")
@@ -134,16 +171,31 @@ def rate_checker_app():
     with col2:
         check_out_date = st.date_input("Check-out", datetime.now() + timedelta(days=3))
     
+    # Log delle selezioni in modalità debug
+    if DEBUG_MODE:
+        st.sidebar.write("📋 Parametri selezionati:")
+        st.sidebar.write(f"- Hotel: {selected_hotels}")
+        st.sidebar.write(f"- Check-in: {check_in_date}")
+        st.sidebar.write(f"- Check-out: {check_out_date}")
+        st.sidebar.write(f"- Durata soggiorno: {(check_out_date - check_in_date).days} giorni")
+    
     # Bottone per eseguire la ricerca
     if st.sidebar.button("Cerca tariffe"):
         # Inizializza l'API Xotelo
         xotelo_api = XoteloAPI()
         
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
         with st.spinner("Recupero tariffe in corso..."):
             # Raccogli i dati per ciascun hotel selezionato
             all_data = []
             
-            for hotel in selected_hotels:
+            for i, hotel in enumerate(selected_hotels):
+                progress = int(100 * i / len(selected_hotels))
+                progress_bar.progress(progress)
+                status_text.text(f"Elaborazione {hotel}... ({i+1}/{len(selected_hotels)})")
+                
                 hotel_key = hotel_keys.get(hotel, "")
                 if hotel_key:
                     # Ottieni le tariffe dall'API
@@ -158,6 +210,12 @@ def rate_checker_app():
                     
                     if not df.empty:
                         all_data.append(df)
+                else:
+                    if DEBUG_MODE:
+                        st.warning(f"⚠️ Chiave TripAdvisor non trovata per {hotel}")
+            
+            progress_bar.progress(100)
+            status_text.text("Elaborazione completata!")
             
             if all_data:
                 # Combina tutti i DataFrame
@@ -166,9 +224,15 @@ def rate_checker_app():
                 # Memorizza i dati nella sessione
                 st.session_state.rate_data = combined_df
                 
-                st.success("Dati tariffari recuperati con successo!")
+                st.success(f"✅ Dati tariffari recuperati con successo! Trovate {len(combined_df)} tariffe per {len(selected_hotels)} hotel.")
+                
+                if DEBUG_MODE:
+                    st.write("📊 Struttura dati:")
+                    st.write(combined_df.info())
+                    st.write("📈 Statistiche:")
+                    st.write(combined_df.describe())
             else:
-                st.error("Nessun dato recuperato. Verifica le chiavi degli hotel e riprova.")
+                st.error("❌ Nessun dato recuperato. Verifica le chiavi degli hotel e riprova.")
     
     # Visualizza i dati se disponibili
     if "rate_data" in st.session_state:
@@ -186,6 +250,10 @@ def rate_checker_app():
         
         # Filtra per l'hotel selezionato
         hotel_df = df[df["hotel"] == selected_hotel]
+        
+        if DEBUG_MODE:
+            st.write(f"🔍 Analisi per {selected_hotel}")
+            st.write(f"📋 Dati disponibili: {len(hotel_df)} tariffe da {len(hotel_df['ota'].unique())} OTA")
         
         if not hotel_df.empty:
             # Grafico delle tariffe per OTA
@@ -207,16 +275,22 @@ def rate_checker_app():
                 min_price = hotel_df["price"].min()
                 min_ota = hotel_df.loc[hotel_df["price"].idxmin(), "ota"]
                 st.metric("Prezzo minimo", f"${min_price:.2f}", f"via {min_ota}")
+                if DEBUG_MODE:
+                    st.write(f"🔍 Dettaglio: {min_ota} offre il prezzo più basso")
             
             with col2:
                 max_price = hotel_df["price"].max()
                 max_ota = hotel_df.loc[hotel_df["price"].idxmax(), "ota"]
                 st.metric("Prezzo massimo", f"${max_price:.2f}", f"via {max_ota}")
+                if DEBUG_MODE:
+                    st.write(f"🔍 Dettaglio: {max_ota} ha il prezzo più alto")
             
             with col3:
                 avg_price = hotel_df["price"].mean()
                 price_range = max_price - min_price
                 st.metric("Prezzo medio", f"${avg_price:.2f}", f"Range: ${price_range:.2f}")
+                if DEBUG_MODE:
+                    st.write(f"🔍 La variazione di prezzo è ${price_range:.2f} (±{(price_range/avg_price*100):.1f}%)")
             
             # Tabella completa dei dati
             st.subheader("Dettaglio tariffe per OTA")
@@ -230,6 +304,12 @@ def rate_checker_app():
         
         # Trova il prezzo minimo per ciascun hotel
         min_prices = df.groupby("hotel")["price"].min().reset_index()
+        
+        if DEBUG_MODE:
+            st.write("📊 Analisi comparativa:")
+            st.write(f"- Hotel più economico: {min_prices.loc[min_prices['price'].idxmin(), 'hotel']} (${min_prices['price'].min():.2f})")
+            st.write(f"- Hotel più costoso: {min_prices.loc[min_prices['price'].idxmax(), 'hotel']} (${min_prices['price'].max():.2f})")
+            st.write(f"- Differenza min-max: ${min_prices['price'].max() - min_prices['price'].min():.2f}")
         
         # Grafico di confronto
         fig = px.bar(
@@ -253,8 +333,14 @@ def rate_checker_app():
         # Seleziona l'hotel di riferimento (default: VOI Alimini)
         reference_hotel = "VOI Alimini" if "VOI Alimini" in df["hotel"].unique() else df["hotel"].iloc[0]
         
+        if DEBUG_MODE:
+            st.write(f"🏨 Hotel di riferimento: {reference_hotel}")
+        
         # Trova il prezzo minimo per l'hotel di riferimento
         ref_min_price = df[df["hotel"] == reference_hotel]["price"].min()
+        
+        if DEBUG_MODE:
+            st.write(f"💰 Prezzo minimo di riferimento: ${ref_min_price:.2f}")
         
         # Confronta con gli altri hotel
         parity_data = []
@@ -264,6 +350,9 @@ def rate_checker_app():
                 min_price = df[df["hotel"] == hotel]["price"].min()
                 price_diff = ref_min_price - min_price
                 perc_diff = (price_diff / min_price) * 100 if min_price > 0 else 0
+                
+                if DEBUG_MODE:
+                    st.write(f"🔄 Confronto con {hotel}: ${min_price:.2f} (diff: ${price_diff:.2f}, {perc_diff:.2f}%)")
                 
                 parity_data.append({
                     "hotel": hotel,
@@ -300,8 +389,21 @@ def rate_checker_app():
             display_df["perc_diff"] = display_df["perc_diff"].apply(lambda x: f"{x:.2f}%")
             
             st.dataframe(display_df, use_container_width=True)
+            
+            if DEBUG_MODE:
+                # Aggiungi un sommario dell'analisi
+                st.write("📊 Sommario dell'analisi:")
+                if all(parity_df["price_diff"] > 0):
+                    st.write("✅ VOI Alimini ha prezzi più alti di tutti i competitor")
+                elif all(parity_df["price_diff"] < 0):
+                    st.write("⚠️ VOI Alimini ha prezzi più bassi di tutti i competitor")
+                else:
+                    higher = parity_df[parity_df["price_diff"] > 0]["hotel"].tolist()
+                    lower = parity_df[parity_df["price_diff"] < 0]["hotel"].tolist()
+                    st.write(f"ℹ️ VOI Alimini ha prezzi più alti di: {', '.join(higher) if higher else 'nessuno'}")
+                    st.write(f"ℹ️ VOI Alimini ha prezzi più bassi di: {', '.join(lower) if lower else 'nessuno'}")
     else:
-        st.info("Clicca su 'Cerca tariffe' per recuperare i dati tariffari")
+        st.info("ℹ️ Clicca su 'Cerca tariffe' per recuperare i dati tariffari")
     
     # Sezione informativa
     with st.expander("Come trovare la chiave TripAdvisor dell'hotel"):
@@ -314,6 +416,15 @@ def rate_checker_app():
         
         Sostituisci le chiavi di esempio nel codice con quelle reali degli hotel che desideri monitorare.
         """)
+    
+    # Footer con informazioni di sessione in modalità debug
+    if DEBUG_MODE:
+        st.divider()
+        st.write("### 📋 Informazioni di sessione")
+        st.write(f"- Timestamp corrente: {datetime.now()}")
+        st.write(f"- Chiavi in session_state: {list(st.session_state.keys())}")
+        memory_usage = df.memory_usage(deep=True).sum() / 1024 / 1024 if 'rate_data' in st.session_state else 0
+        st.write(f"- Utilizzo memoria DataFrame: {memory_usage:.2f} MB")
 
 # Esegui l'app
 if __name__ == "__main__":
