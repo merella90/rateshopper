@@ -105,16 +105,32 @@ class XoteloAPI:
     def __init__(self):
         self.base_url = "https://data.xotelo.com/api"
     
-    def get_rates(self, hotel_key, check_in, check_out):
+    def get_rates(self, hotel_key, check_in, check_out, adults=2, children_ages=None, rooms=1, currency="USD"):
         """
-        Ottieni le tariffe per un hotel specifico
+        Ottieni le tariffe per un hotel specifico con specifiche di occupanza
+        
+        Args:
+            hotel_key (str): Chiave TripAdvisor dell'hotel
+            check_in (str): Data di check-in in formato YYYY-MM-DD
+            check_out (str): Data di check-out in formato YYYY-MM-DD
+            adults (int): Numero di adulti (default 2)
+            children_ages (list): Lista delle età dei bambini (default None)
+            rooms (int): Numero di camere (default 1)
+            currency (str): Valuta desiderata (default USD)
         """
         endpoint = f"{self.base_url}/rates"
         params = {
             "hotel_key": hotel_key,
             "chk_in": check_in,
-            "chk_out": check_out
+            "chk_out": check_out,
+            "adults": adults,
+            "rooms": rooms,
+            "currency": currency
         }
+        
+        # Aggiungi età dei bambini se specificato
+        if children_ages and len(children_ages) > 0:
+            params["age_of_children"] = ",".join(map(str, children_ages))
         
         try:
             response = requests.get(endpoint, params=params)
@@ -131,7 +147,7 @@ hotel_keys = {
 }
 
 # Funzione per convertire la risposta API in DataFrame
-def process_xotelo_response(response, hotel_name, currency_converter, target_currency="EUR", num_nights=1):
+def process_xotelo_response(response, hotel_name, currency_converter, target_currency="EUR", num_nights=1, adults=2, children_count=0, rooms=1):
     """
     Elabora la risposta dell'API Xotelo e la converte in un DataFrame
     
@@ -141,6 +157,9 @@ def process_xotelo_response(response, hotel_name, currency_converter, target_cur
         currency_converter (CurrencyConverter): Convertitore di valuta
         target_currency (str): Valuta target (default: EUR)
         num_nights (int): Numero di notti del soggiorno
+        adults (int): Numero di adulti
+        children_count (int): Numero di bambini
+        rooms (int): Numero di camere
         
     Returns:
         pd.DataFrame: DataFrame con i dati delle tariffe
@@ -159,7 +178,10 @@ def process_xotelo_response(response, hotel_name, currency_converter, target_cur
             "check_out": "",
             "timestamp": 0,
             "available": False,  # Usare "available" per maggiore compatibilità
-            "message": "Dati non disponibili/sold out"
+            "message": "Dati non disponibili/sold out",
+            "adults": adults,
+            "children": children_count,
+            "rooms": rooms
         }])
     
     rates = response.get("result", {}).get("rates", [])
@@ -179,14 +201,20 @@ def process_xotelo_response(response, hotel_name, currency_converter, target_cur
             "check_out": check_out,
             "timestamp": response.get("timestamp", 0),
             "available": False,
-            "message": "Dati non disponibili/sold out"
+            "message": "Dati non disponibili/sold out",
+            "adults": adults,
+            "children": children_count,
+            "rooms": rooms
         }])
     
     data = []
     for rate in rates:
-        # L'API Xotelo fornisce i prezzi in USD, convertiamo in EUR
-        usd_price = rate.get("rate", 0)
-        price_per_night = currency_converter.convert(usd_price, "USD", target_currency)
+        # L'API Xotelo fornisce i prezzi nella valuta specificata, convertiamo se necessario
+        source_price = rate.get("rate", 0)
+        source_currency = "USD"  # Valuta predefinita dell'API
+        
+        # Converti alla valuta target se diversa
+        price_per_night = currency_converter.convert(source_price, source_currency, target_currency)
         total_price = price_per_night * num_nights
         
         data.append({
@@ -200,7 +228,10 @@ def process_xotelo_response(response, hotel_name, currency_converter, target_cur
             "check_out": check_out,
             "timestamp": response.get("timestamp", 0),
             "available": True,
-            "message": ""
+            "message": "",
+            "adults": adults,
+            "children": children_count,
+            "rooms": rooms
         })
     
     return pd.DataFrame(data)
@@ -259,6 +290,14 @@ def normalize_dataframe(df, num_nights):
         elif "is_available" in columns:
             normalized_df.loc[~normalized_df["is_available"], "message"] = "Dati non disponibili/sold out"
     
+    # Assicurati che siano presenti le colonne per l'occupanza
+    if "adults" not in columns:
+        normalized_df["adults"] = 2  # Default
+    if "children" not in columns:
+        normalized_df["children"] = 0  # Default
+    if "rooms" not in columns:
+        normalized_df["rooms"] = 1  # Default
+    
     return normalized_df
 
 # Applicazione Streamlit
@@ -309,6 +348,41 @@ def rate_checker_app():
     else:
         st.sidebar.info(f"Durata soggiorno: {num_nights} {'notte' if num_nights == 1 else 'notti'}")
     
+    # Parametri di occupanza
+    st.sidebar.header("Occupanza")
+    
+    # Adulti e camere
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        num_adults = st.number_input("Adulti", min_value=1, max_value=8, value=2)
+    with col2:
+        num_rooms = st.number_input("Camere", min_value=1, max_value=4, value=1)
+    
+    # Gestione bambini
+    has_children = st.sidebar.checkbox("Aggiungi bambini")
+    children_ages = []
+    
+    if has_children:
+        num_children = st.sidebar.number_input("Numero bambini", min_value=1, max_value=6, value=1)
+        
+        for i in range(num_children):
+            age = st.sidebar.number_input(
+                f"Età bambino {i+1}",
+                min_value=0,
+                max_value=17,
+                value=min(4, 17),  # Default a 4 anni, ma non oltre 17
+                key=f"child_age_{i}"
+            )
+            children_ages.append(age)
+    
+    # Visualizzazione del riepilogo dell'occupanza
+    occupancy_summary = f"{num_adults} adulti"
+    if has_children:
+        occupancy_summary += f", {len(children_ages)} bambini"
+    occupancy_summary += f" in {num_rooms} {'camera' if num_rooms == 1 else 'camere'}"
+    
+    st.sidebar.success(f"Configurazione: {occupancy_summary}")
+    
     # Visualizzazione dei prezzi
     price_view = st.sidebar.radio(
         "Visualizza prezzi",
@@ -334,7 +408,7 @@ def rate_checker_app():
         # Inizializza l'API Xotelo
         xotelo_api = XoteloAPI()
         
-        with st.spinner("Recupero tariffe in corso..."):
+        with st.spinner(f"Recupero tariffe per {occupancy_summary}..."):
             # Raccogli i dati per ciascun hotel selezionato
             all_data = []
             
@@ -353,7 +427,11 @@ def rate_checker_app():
                     response = xotelo_api.get_rates(
                         hotel_key,
                         check_in_date.strftime("%Y-%m-%d"),
-                        check_out_date.strftime("%Y-%m-%d")
+                        check_out_date.strftime("%Y-%m-%d"),
+                        adults=num_adults,
+                        children_ages=children_ages if has_children else None,
+                        rooms=num_rooms,
+                        currency=currency
                     )
                     
                     # Processa la risposta, considerando il numero di notti
@@ -362,7 +440,10 @@ def rate_checker_app():
                         hotel, 
                         currency_converter, 
                         currency,
-                        num_nights
+                        num_nights,
+                        num_adults,
+                        len(children_ages) if has_children else 0,
+                        num_rooms
                     )
                     
                     all_data.append(df)
@@ -381,6 +462,12 @@ def rate_checker_app():
                 st.session_state.rate_data = normalized_df
                 st.session_state.currency = currency
                 st.session_state.num_nights = num_nights
+                st.session_state.occupancy = {
+                    "adults": num_adults,
+                    "children": len(children_ages) if has_children else 0,
+                    "children_ages": children_ages if has_children else [],
+                    "rooms": num_rooms
+                }
                 
                 # Conteggia gli hotel disponibili e non disponibili
                 available_hotels = normalized_df[normalized_df["available"]]["hotel"].unique()
@@ -403,6 +490,34 @@ def rate_checker_app():
         st.session_state.rate_data = df  # Aggiorna il DataFrame in session_state
         
         current_currency = st.session_state.currency
+        
+        # Ottieni l'occupanza salvata
+        saved_occupancy = st.session_state.get("occupancy", {
+            "adults": 2,
+            "children": 0,
+            "children_ages": [],
+            "rooms": 1
+        })
+        
+        # Visualizza il banner dell'occupanza attuale nei dati
+        st.info(
+            f"Prezzi visualizzati per: {saved_occupancy['adults']} adulti"
+            f"{', ' + str(saved_occupancy['children']) + ' bambini' if saved_occupancy['children'] > 0 else ''}"
+            f" in {saved_occupancy['rooms']} {'camera' if saved_occupancy['rooms'] == 1 else 'camere'}"
+        )
+        
+        # Avviso se l'occupanza corrente è diversa da quella nei dati
+        current_occupancy_different = (
+            num_adults != saved_occupancy['adults'] or
+            (len(children_ages) if has_children else 0) != saved_occupancy['children'] or
+            num_rooms != saved_occupancy['rooms']
+        )
+        
+        if current_occupancy_different:
+            st.warning(
+                "L'occupanza selezionata è diversa da quella usata per cercare i prezzi. "
+                "Clicca 'Cerca tariffe' per aggiornare i dati con la nuova occupanza."
+            )
         
         # Aggiorna il conteggio delle notti se è cambiato
         if "num_nights" in st.session_state and st.session_state.num_nights != num_nights:
@@ -463,7 +578,7 @@ def rate_checker_app():
                     hotel_df,
                     x="ota",
                     y=price_column,
-                    title=f"Tariffe per {selected_hotel} ({check_in_date.strftime('%d/%m/%Y')} - {check_out_date.strftime('%d/%m/%Y')})",
+                    title=f"Tariffe per {selected_hotel} - {occupancy_summary} ({check_in_date.strftime('%d/%m/%Y')} - {check_out_date.strftime('%d/%m/%Y')})",
                     color="ota",
                     labels={price_column: f"Prezzo {price_description} ({currency_symbol})", "ota": "OTA"}
                 )
@@ -542,7 +657,7 @@ def rate_checker_app():
                     min_prices_df,
                     x="hotel",
                     y="min_price",
-                    title=f"Prezzo minimo disponibile per hotel ({check_in_date.strftime('%d/%m/%Y')} - {check_out_date.strftime('%d/%m/%Y')})",
+                    title=f"Prezzo minimo disponibile per hotel - {occupancy_summary} ({check_in_date.strftime('%d/%m/%Y')} - {check_out_date.strftime('%d/%m/%Y')})",
                     color="hotel",
                     labels={"min_price": f"Prezzo minimo {price_description} ({currency_symbol})", "hotel": "Hotel"}
                 )
@@ -656,6 +771,19 @@ def rate_checker_app():
         Se entrambe le fonti non sono disponibili, viene utilizzato un tasso di fallback approssimativo.
         """)
     
+    # Informazioni sull'API Xotelo e l'occupanza
+    with st.expander("Informazioni sui parametri di occupanza"):
+        st.write("""
+        I prezzi mostrati si riferiscono all'occupanza specificata nelle impostazioni (adulti, bambini e camere).
+        
+        L'API Xotelo consente di specificare:
+        - Numero di adulti (1-32)
+        - Età dei bambini (0-17 anni)
+        - Numero di camere (1-8)
+        
+        Modificando questi parametri e facendo una nuova ricerca, otterrai i prezzi aggiornati per la configurazione scelta.
+        """)
+    
     # Sezione informativa
     with st.expander("Come trovare la chiave TripAdvisor dell'hotel"):
         st.write("""
@@ -667,6 +795,10 @@ def rate_checker_app():
         
         Le chiavi sono universali e funzionano sia con TripAdvisor.it che con TripAdvisor.com.
         """)
+    
+    # Informazioni sulla versione
+    st.sidebar.markdown("---")
+    st.sidebar.info("Versione 0.3.1 - Con supporto per l'occupanza")
 
 # Esegui l'app
 if __name__ == "__main__":
