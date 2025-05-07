@@ -108,14 +108,6 @@ class XoteloAPI:
     def get_rates(self, hotel_key, check_in, check_out):
         """
         Ottieni le tariffe per un hotel specifico
-        
-        Args:
-            hotel_key (str): Chiave TripAdvisor dell'hotel
-            check_in (str): Data di check-in formato YYYY-MM-DD
-            check_out (str): Data di check-out formato YYYY-MM-DD
-            
-        Returns:
-            dict: Dati tariffari in formato JSON
         """
         endpoint = f"{self.base_url}/rates"
         params = {
@@ -142,15 +134,6 @@ hotel_keys = {
 def process_xotelo_response(response, hotel_name, currency_converter, target_currency="EUR"):
     """
     Elabora la risposta dell'API Xotelo e la converte in un DataFrame
-    
-    Args:
-        response (dict): Risposta JSON dell'API
-        hotel_name (str): Nome dell'hotel
-        currency_converter (CurrencyConverter): Convertitore di valuta
-        target_currency (str): Valuta target (default: EUR)
-        
-    Returns:
-        pd.DataFrame: DataFrame con i dati delle tariffe
     """
     if response["error"] is not None or response["result"] is None:
         return pd.DataFrame()
@@ -190,6 +173,10 @@ def rate_checker_app():
     
     currency_converter = st.session_state.currency_converter
     
+    # Assicuriamoci che la valuta predefinita sia impostata
+    if "currency" not in st.session_state:
+        st.session_state.currency = "EUR"
+    
     # Sidebar per i controlli
     st.sidebar.header("Parametri di ricerca")
     
@@ -197,7 +184,7 @@ def rate_checker_app():
     currency = st.sidebar.selectbox(
         "Valuta",
         ["EUR", "USD"],
-        index=0
+        index=0 if st.session_state.currency == "EUR" else 1
     )
     
     # Lista degli hotel
@@ -224,7 +211,7 @@ def rate_checker_app():
             # Raccogli i dati per ciascun hotel selezionato
             all_data = []
             
-            # Mostra stato debug 
+            # Mostra stato debug
             progress_bar = st.progress(0)
             status_text = st.empty()
             
