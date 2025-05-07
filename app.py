@@ -14,8 +14,91 @@ st.set_page_config(
     layout="wide"
 )
 
-# Definisci un tasso di cambio fisso (aggiornarlo manualmente se necessario)
-USD_TO_EUR = 0.92  # Tasso di cambio fisso USD a EUR
+# Classe per conversione di valuta utilizzando API reali
+class CurrencyConverter:
+    def __init__(self):
+        # Utilizzo dell'API Frankfurter della BCE (European Central Bank)
+        self.base_url = "https://api.frankfurter.app"
+        self.cache = {}
+        self.last_update = None
+        self.update_interval = timedelta(hours=1)  # Aggiorna ogni ora
+    
+    def get_exchange_rate(self, from_currency, to_currency):
+        """
+        Ottieni il tasso di cambio da una valuta a un'altra utilizzando fonti ufficiali
+        """
+        # Se le valute sono uguali, il tasso è 1
+        if from_currency == to_currency:
+            return 1.0
+        
+        # Verifica se è necessario aggiornare il tasso di cambio
+        now = datetime.now()
+        update_needed = (
+            self.last_update is None or 
+            (now - self.last_update) > self.update_interval or
+            f"{from_currency}_{to_currency}" not in self.cache
+        )
+        
+        if update_needed:
+            try:
+                # Frankfurter API (basata sui dati ufficiali della BCE)
+                url = f"{self.base_url}/latest?from={from_currency}&to={to_currency}"
+                response = requests.get(url)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    rate = data["rates"][to_currency]
+                    
+                    # Salva in cache
+                    self.cache[f"{from_currency}_{to_currency}"] = rate
+                    self.last_update = now
+                    
+                    # Debug info
+                    st.sidebar.info(f"Tasso di cambio aggiornato: 1 {from_currency} = {rate} {to_currency}")
+                    
+                    return rate
+                else:
+                    # Fallback su exchangerate.host (altra fonte affidabile)
+                    url = f"https://api.exchangerate.host/convert?from={from_currency}&to={to_currency}"
+                    response = requests.get(url)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        rate = data["result"]
+                        
+                        # Salva in cache
+                        self.cache[f"{from_currency}_{to_currency}"] = rate
+                        self.last_update = now
+                        
+                        # Debug info
+                        st.sidebar.info(f"Tasso di cambio aggiornato (alternativo): 1 {from_currency} = {rate} {to_currency}")
+                        
+                        return rate
+            except Exception as e:
+                st.sidebar.warning(f"Errore nel recupero del tasso di cambio: {str(e)}")
+        
+        # Usa il valore in cache se disponibile
+        if f"{from_currency}_{to_currency}" in self.cache:
+            return self.cache[f"{from_currency}_{to_currency}"]
+        
+        # Valori di fallback approssimativi (da fonti ufficiali BCE)
+        fallback_rates = {"USD_EUR": 0.92, "EUR_USD": 1.09}
+        key = f"{from_currency}_{to_currency}"
+        
+        if key in fallback_rates:
+            st.sidebar.warning("Usando tasso di cambio di fallback")
+            return fallback_rates[key]
+        else:
+            # Usa un tasso generico se tutto fallisce
+            st.sidebar.warning("Tasso di cambio non disponibile. Usando approssimazione.")
+            return 0.92 if from_currency == "USD" and to_currency == "EUR" else 1.09
+    
+    def convert(self, amount, from_currency, to_currency):
+        """
+        Converti un importo da una valuta a un'altra
+        """
+        rate = self.get_exchange_rate(from_currency, to_currency)
+        return amount * rate
 
 # Classe per l'integrazione con Xotelo API
 class XoteloAPI:
@@ -25,6 +108,14 @@ class XoteloAPI:
     def get_rates(self, hotel_key, check_in, check_out):
         """
         Ottieni le tariffe per un hotel specifico
+        
+        Args:
+            hotel_key (str): Chiave TripAdvisor dell'hotel
+            check_in (str): Data di check-in formato YYYY-MM-DD
+            check_out (str): Data di check-out formato YYYY-MM-DD
+            
+        Returns:
+            dict: Dati tariffari in formato JSON
         """
         endpoint = f"{self.base_url}/rates"
         params = {
@@ -48,9 +139,18 @@ hotel_keys = {
 }
 
 # Funzione per convertire la risposta API in DataFrame
-def process_xotelo_response(response, hotel_name, show_in_eur=True):
+def process_xotelo_response(response, hotel_name, currency_converter, target_currency="EUR"):
     """
     Elabora la risposta dell'API Xotelo e la converte in un DataFrame
+    
+    Args:
+        response (dict): Risposta JSON dell'API
+        hotel_name (str): Nome dell'hotel
+        currency_converter (CurrencyConverter): Convertitore di valuta
+        target_currency (str): Valuta target (default: EUR)
+        
+    Returns:
+        pd.DataFrame: DataFrame con i dati delle tariffe
     """
     if response["error"] is not None or response["result"] is None:
         return pd.DataFrame()
@@ -61,16 +161,17 @@ def process_xotelo_response(response, hotel_name, show_in_eur=True):
     
     data = []
     for rate in rates:
-        # Conversione diretta da USD a EUR
+        # L'API Xotelo fornisce i prezzi in USD, convertiamo in EUR
         usd_price = rate.get("rate", 0)
-        eur_price = usd_price * USD_TO_EUR if show_in_eur else usd_price
+        eur_price = currency_converter.convert(usd_price, "USD", target_currency)
         
         data.append({
             "hotel": hotel_name,
             "ota": rate.get("name", ""),
             "ota_code": rate.get("code", ""),
-            "price": eur_price,      # Il prezzo già convertito in EUR
-            "currency": "EUR" if show_in_eur else "USD",
+            "price_usd": usd_price,  # Conserviamo anche il prezzo in USD
+            "price": eur_price,      # Il prezzo in EUR sarà quello principale
+            "currency": target_currency,
             "check_in": check_in,
             "check_out": check_out,
             "timestamp": response["timestamp"]
@@ -83,15 +184,21 @@ def rate_checker_app():
     st.title("Rate Checker VOI Alimini con Xotelo API")
     st.subheader("Confronto tariffe basato su TripAdvisor")
     
+    # Inizializza il convertitore di valuta
+    if "currency_converter" not in st.session_state:
+        st.session_state.currency_converter = CurrencyConverter()
+    
+    currency_converter = st.session_state.currency_converter
+    
     # Sidebar per i controlli
     st.sidebar.header("Parametri di ricerca")
     
-    # Selezione della valuta (sempre impostata su EUR)
-    currency = "EUR"
-    st.sidebar.text(f"Valuta: {currency}")
-    
-    # Debug mode
-    debug_mode = st.sidebar.checkbox("Modalità Debug", value=False)
+    # Selezione della valuta
+    currency = st.sidebar.selectbox(
+        "Valuta",
+        ["EUR", "USD"],
+        index=0
+    )
     
     # Lista degli hotel
     competitors = list(hotel_keys.keys())
@@ -117,7 +224,7 @@ def rate_checker_app():
             # Raccogli i dati per ciascun hotel selezionato
             all_data = []
             
-            # Mostra stato debug se abilitato
+            # Mostra stato debug 
             progress_bar = st.progress(0)
             status_text = st.empty()
             
@@ -135,18 +242,10 @@ def rate_checker_app():
                         check_out_date.strftime("%Y-%m-%d")
                     )
                     
-                    if debug_mode:
-                        st.write(f"Risposta per {hotel}:")
-                        st.json(response)
-                    
-                    # Processa la risposta (sempre in EUR)
-                    df = process_xotelo_response(response, hotel, show_in_eur=True)
+                    # Processa la risposta
+                    df = process_xotelo_response(response, hotel, currency_converter, currency)
                     
                     if not df.empty:
-                        if debug_mode:
-                            st.write(f"DataFrame per {hotel}:")
-                            st.write(df)
-                        
                         all_data.append(df)
                     else:
                         st.warning(f"Nessun dato trovato per {hotel}")
@@ -158,12 +257,9 @@ def rate_checker_app():
                 # Combina tutti i DataFrame
                 combined_df = pd.concat(all_data, ignore_index=True)
                 
-                if debug_mode:
-                    st.write("DataFrame combinato:")
-                    st.write(combined_df)
-                
                 # Memorizza i dati nella sessione
                 st.session_state.rate_data = combined_df
+                st.session_state.currency = currency
                 
                 st.success(f"Dati tariffari recuperati con successo per {len(all_data)} hotel!")
             else:
@@ -173,6 +269,30 @@ def rate_checker_app():
     if "rate_data" in st.session_state:
         # Ottieni il DataFrame
         df = st.session_state.rate_data
+        current_currency = st.session_state.currency
+        
+        # Se l'utente ha cambiato la valuta, aggiorna i prezzi
+        if current_currency != currency:
+            # Converti i prezzi alla nuova valuta
+            if currency == "USD" and current_currency == "EUR":
+                df["price"] = df.apply(
+                    lambda row: currency_converter.convert(row["price"], "EUR", "USD"), 
+                    axis=1
+                )
+            elif currency == "EUR" and current_currency == "USD":
+                df["price"] = df.apply(
+                    lambda row: currency_converter.convert(row["price"], "USD", "EUR"), 
+                    axis=1
+                )
+            
+            # Aggiorna la valuta nella sessione
+            st.session_state.currency = currency
+            st.session_state.rate_data = df
+            
+            st.success(f"Prezzi convertiti in {currency}")
+        
+        # Simbolo della valuta
+        currency_symbol = "€" if currency == "EUR" else "$"
         
         # Visualizza la scheda principale
         st.header("Confronto tariffe tra OTA")
@@ -194,7 +314,7 @@ def rate_checker_app():
                 y="price",
                 title=f"Tariffe per {selected_hotel} ({check_in_date.strftime('%d/%m/%Y')} - {check_out_date.strftime('%d/%m/%Y')})",
                 color="ota",
-                labels={"price": f"Prezzo (€)", "ota": "OTA"}
+                labels={"price": f"Prezzo ({currency_symbol})", "ota": "OTA"}
             )
             
             st.plotly_chart(fig, use_container_width=True)
@@ -205,24 +325,24 @@ def rate_checker_app():
             with col1:
                 min_price = hotel_df["price"].min()
                 min_ota = hotel_df.loc[hotel_df["price"].idxmin(), "ota"]
-                st.metric("Prezzo minimo", f"€{min_price:.2f}", f"via {min_ota}")
+                st.metric("Prezzo minimo", f"{currency_symbol}{min_price:.2f}", f"via {min_ota}")
             
             with col2:
                 max_price = hotel_df["price"].max()
                 max_ota = hotel_df.loc[hotel_df["price"].idxmax(), "ota"]
-                st.metric("Prezzo massimo", f"€{max_price:.2f}", f"via {max_ota}")
+                st.metric("Prezzo massimo", f"{currency_symbol}{max_price:.2f}", f"via {max_ota}")
             
             with col3:
                 avg_price = hotel_df["price"].mean()
                 price_range = max_price - min_price
-                st.metric("Prezzo medio", f"€{avg_price:.2f}", f"Range: €{price_range:.2f}")
+                st.metric("Prezzo medio", f"{currency_symbol}{avg_price:.2f}", f"Range: {currency_symbol}{price_range:.2f}")
             
             # Tabella completa dei dati
             st.subheader("Dettaglio tariffe per OTA")
             # Creiamo una copia del dataframe per la visualizzazione
             display_df = hotel_df[["ota", "price"]].sort_values(by="price").copy()
-            # Formatta i prezzi come euro
-            display_df["price"] = display_df["price"].apply(lambda x: f"€{x:.2f}")
+            # Formatta i prezzi
+            display_df["price"] = display_df["price"].apply(lambda x: f"{currency_symbol}{x:.2f}")
             st.dataframe(display_df, use_container_width=True)
         
         # Confronto tra hotel
@@ -238,7 +358,7 @@ def rate_checker_app():
             y="price",
             title=f"Prezzo minimo disponibile per hotel ({check_in_date.strftime('%d/%m/%Y')} - {check_out_date.strftime('%d/%m/%Y')})",
             color="hotel",
-            labels={"price": f"Prezzo minimo (€)", "hotel": "Hotel"}
+            labels={"price": f"Prezzo minimo ({currency_symbol})", "hotel": "Hotel"}
         )
         
         st.plotly_chart(fig, use_container_width=True)
@@ -246,7 +366,7 @@ def rate_checker_app():
         # Tabella di confronto
         st.subheader("Confronto prezzi minimi tra hotel")
         display_min_prices = min_prices.copy()
-        display_min_prices["price"] = display_min_prices["price"].apply(lambda x: f"€{x:.2f}")
+        display_min_prices["price"] = display_min_prices["price"].apply(lambda x: f"{currency_symbol}{x:.2f}")
         st.dataframe(display_min_prices.sort_values(by="price"), use_container_width=True)
         
         # Analisi parità tariffaria
@@ -297,22 +417,35 @@ def rate_checker_app():
             
             # Formatta i dati per la visualizzazione
             display_df = parity_df.copy()
-            display_df["min_price"] = display_df["min_price"].apply(lambda x: f"€{x:.2f}")
-            display_df["price_diff"] = display_df["price_diff"].apply(lambda x: f"€{x:.2f}")
+            display_df["min_price"] = display_df["min_price"].apply(lambda x: f"{currency_symbol}{x:.2f}")
+            display_df["price_diff"] = display_df["price_diff"].apply(lambda x: f"{currency_symbol}{x:.2f}")
             display_df["perc_diff"] = display_df["perc_diff"].apply(lambda x: f"{x:.2f}%")
             
             st.dataframe(display_df, use_container_width=True)
     else:
         st.info("Clicca su 'Cerca tariffe' per recuperare i dati tariffari")
     
-    # Sezione informativa
-    with st.expander("Informazioni"):
+    # Informazioni sul tasso di cambio
+    with st.expander("Informazioni sul tasso di cambio"):
         st.write("""
-        Questa applicazione utilizza l'API Xotelo per recuperare i prezzi degli hotel da TripAdvisor.
+        Questa applicazione utilizza i tassi di cambio ufficiali della Banca Centrale Europea (BCE) tramite l'API Frankfurter.
         
-        I prezzi originali sono in USD e vengono convertiti in EUR utilizzando un tasso di cambio fisso di 1 USD = 0.92 EUR.
+        I tassi di cambio vengono aggiornati ogni ora per garantire la massima precisione. In caso di problemi di connessione,
+        viene utilizzata l'API ExchangeRate.host come fonte alternativa.
         
-        Le chiavi degli hotel sono universali e funzionano sia con TripAdvisor.it che con TripAdvisor.com.
+        Se entrambe le fonti non sono disponibili, viene utilizzato un tasso di fallback approssimativo.
+        """)
+    
+    # Sezione informativa
+    with st.expander("Come trovare la chiave TripAdvisor dell'hotel"):
+        st.write("""
+        Per utilizzare questa app, è necessario avere la chiave TripAdvisor per ciascun hotel. Ecco come trovarla:
+        
+        1. Vai alla pagina dell'hotel su TripAdvisor.it o TripAdvisor.com
+        2. Osserva l'URL, che sarà simile a: `https://www.tripadvisor.it/Hotel_Review-g1234567-d12345678-Reviews-Hotel_Name.html`
+        3. La chiave è la parte `g1234567-d12345678`
+        
+        Le chiavi sono universali e funzionano sia con TripAdvisor.it che con TripAdvisor.com.
         """)
 
 # Esegui l'app
