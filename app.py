@@ -72,10 +72,10 @@ class XoteloAPI:
 # Dizionario delle chiavi TripAdvisor per gli hotel competitor
 # Queste dovrebbero essere sostituite con le chiavi reali
 hotel_keys = {
-    "VOI Alimini": "g1234567-d12345678",  # Esempio di chiave (da sostituire con quella reale)
-    "Ciaoclub Arco Del Saracino": "g1234567-d12345679",  # Esempio di chiave
-    "Hotel Alpiselect Robinson Apulia": "g1234567-d12345680",  # Esempio di chiave
-    "Alpiclub Hotel Thalas Club": "g1234567-d12345681"  # Esempio di chiave
+    "VOI Alimini": "g652004-d1799967",  
+    "Ciaoclub Arco Del Saracino": "g946998-d947000", 
+    "Hotel Alpiselect Robinson Apulia": "g947837-d949958",  
+    "Alpiclub Hotel Thalas Club": "g1179328-d1159227" 
 }
 
 # Funzione per convertire la risposta API in DataFrame
