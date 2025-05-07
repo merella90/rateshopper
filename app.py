@@ -14,98 +14,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# Classe per conversione di valuta utilizzando API reali
-class CurrencyConverter:
-    def __init__(self):
-        # Utilizzo dell'API Frankfurter della BCE (European Central Bank)
-        self.base_url = "https://api.frankfurter.app"
-        self.cache = {}
-        self.last_update = None
-        self.update_interval = timedelta(hours=1)  # Aggiorna ogni ora
-    
-    def get_exchange_rate(self, from_currency, to_currency):
-        """
-        Ottieni il tasso di cambio da una valuta a un'altra utilizzando fonti ufficiali
-        """
-        # Se le valute sono uguali, il tasso è 1
-        if from_currency == to_currency:
-            return 1.0
-        
-        # Verifica se è necessario aggiornare il tasso di cambio
-        now = datetime.now()
-        update_needed = (
-            self.last_update is None or 
-            (now - self.last_update) > self.update_interval or
-            f"{from_currency}_{to_currency}" not in self.cache
-        )
-        
-        if update_needed:
-            try:
-                # Frankfurter API (basata sui dati ufficiali della BCE)
-                url = f"{self.base_url}/latest?from={from_currency}&to={to_currency}"
-                response = requests.get(url)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    rate = data["rates"][to_currency]
-                    
-                    # Salva in cache
-                    self.cache[f"{from_currency}_{to_currency}"] = rate
-                    self.last_update = now
-                    
-                    # Debug info
-                    st.sidebar.info(f"Tasso di cambio aggiornato: 1 {from_currency} = {rate} {to_currency}")
-                    
-                    return rate
-                else:
-                    # Fallback su exchangerate.host (altra fonte affidabile)
-                    url = f"https://api.exchangerate.host/convert?from={from_currency}&to={to_currency}"
-                    response = requests.get(url)
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        rate = data["result"]
-                        
-                        # Salva in cache
-                        self.cache[f"{from_currency}_{to_currency}"] = rate
-                        self.last_update = now
-                        
-                        # Debug info
-                        st.sidebar.info(f"Tasso di cambio aggiornato (alternativo): 1 {from_currency} = {rate} {to_currency}")
-                        
-                        return rate
-            except Exception as e:
-                st.sidebar.warning(f"Errore nel recupero del tasso di cambio: {str(e)}")
-        
-        # Usa il valore in cache se disponibile
-        if f"{from_currency}_{to_currency}" in self.cache:
-            return self.cache[f"{from_currency}_{to_currency}"]
-        
-        # Valori di fallback approssimativi (da fonti ufficiali BCE)
-        fallback_rates = {"USD_EUR": 0.92, "EUR_USD": 1.09}
-        key = f"{from_currency}_{to_currency}"
-        
-        if key in fallback_rates:
-            st.sidebar.warning("Usando tasso di cambio di fallback")
-            return fallback_rates[key]
-        else:
-            # Usa un tasso generico se tutto fallisce
-            st.sidebar.warning("Tasso di cambio non disponibile. Usando approssimazione.")
-            return 0.92 if from_currency == "USD" and to_currency == "EUR" else 1.09
-    
-    def convert(self, amount, from_currency, to_currency):
-        """
-        Converti un importo da una valuta a un'altra
-        """
-        rate = self.get_exchange_rate(from_currency, to_currency)
-        return amount * rate
-
 # Classe per l'integrazione con Xotelo API
 class XoteloAPI:
     def __init__(self):
         self.base_url = "https://data.xotelo.com/api"
     
-    def get_rates(self, hotel_key, check_in, check_out, adults=2, children_ages=None, rooms=1, currency="USD"):
+    def get_rates(self, hotel_key, check_in, check_out, adults=2, children_ages=None, rooms=1, currency="EUR"):
         """
         Ottieni le tariffe per un hotel specifico con specifiche di occupanza
         
@@ -116,7 +30,7 @@ class XoteloAPI:
             adults (int): Numero di adulti (default 2)
             children_ages (list): Lista delle età dei bambini (default None)
             rooms (int): Numero di camere (default 1)
-            currency (str): Valuta desiderata (default USD)
+            currency (str): Valuta desiderata (default EUR)
         """
         endpoint = f"{self.base_url}/rates"
         params = {
@@ -147,19 +61,18 @@ hotel_keys = {
 }
 
 # Funzione per convertire la risposta API in DataFrame
-def process_xotelo_response(response, hotel_name, currency_converter, target_currency="EUR", num_nights=1, adults=2, children_count=0, rooms=1):
+def process_xotelo_response(response, hotel_name, num_nights=1, adults=2, children_count=0, rooms=1, currency="EUR"):
     """
     Elabora la risposta dell'API Xotelo e la converte in un DataFrame
     
     Args:
         response (dict): Risposta JSON dell'API
         hotel_name (str): Nome dell'hotel
-        currency_converter (CurrencyConverter): Convertitore di valuta
-        target_currency (str): Valuta target (default: EUR)
         num_nights (int): Numero di notti del soggiorno
         adults (int): Numero di adulti
         children_count (int): Numero di bambini
         rooms (int): Numero di camere
+        currency (str): Valuta (default: EUR)
         
     Returns:
         pd.DataFrame: DataFrame con i dati delle tariffe
@@ -173,7 +86,7 @@ def process_xotelo_response(response, hotel_name, currency_converter, target_cur
             "ota_code": "N/A",
             "price": 0,  # Prezzo unitario
             "price_total": 0,  # Prezzo totale per il soggiorno
-            "currency": target_currency,
+            "currency": currency,
             "check_in": "",
             "check_out": "",
             "timestamp": 0,
@@ -196,7 +109,7 @@ def process_xotelo_response(response, hotel_name, currency_converter, target_cur
             "ota_code": "N/A",
             "price": 0,
             "price_total": 0,
-            "currency": target_currency,
+            "currency": currency,
             "check_in": check_in,
             "check_out": check_out,
             "timestamp": response.get("timestamp", 0),
@@ -209,12 +122,8 @@ def process_xotelo_response(response, hotel_name, currency_converter, target_cur
     
     data = []
     for rate in rates:
-        # L'API Xotelo fornisce i prezzi nella valuta specificata, convertiamo se necessario
-        source_price = rate.get("rate", 0)
-        source_currency = "USD"  # Valuta predefinita dell'API
-        
-        # Converti alla valuta target se diversa
-        price_per_night = currency_converter.convert(source_price, source_currency, target_currency)
+        # L'API Xotelo fornisce i prezzi nella valuta specificata
+        price_per_night = rate.get("rate", 0)
         total_price = price_per_night * num_nights
         
         data.append({
@@ -223,7 +132,7 @@ def process_xotelo_response(response, hotel_name, currency_converter, target_cur
             "ota_code": rate.get("code", ""),
             "price": price_per_night,  # Prezzo unitario/per notte
             "price_total": total_price,  # Prezzo totale per il soggiorno
-            "currency": target_currency,
+            "currency": currency,
             "check_in": check_in,
             "check_out": check_out,
             "timestamp": response.get("timestamp", 0),
@@ -305,12 +214,6 @@ def rate_checker_app():
     st.title("Rate Checker VOI Alimini con Xotelo API")
     st.subheader("Confronto tariffe basato su TripAdvisor")
     
-    # Inizializza il convertitore di valuta
-    if "currency_converter" not in st.session_state:
-        st.session_state.currency_converter = CurrencyConverter()
-    
-    currency_converter = st.session_state.currency_converter
-    
     # Assicuriamoci che la valuta predefinita sia impostata
     if "currency" not in st.session_state:
         st.session_state.currency = "EUR"
@@ -321,8 +224,8 @@ def rate_checker_app():
     # Selezione della valuta
     currency = st.sidebar.selectbox(
         "Valuta",
-        ["EUR", "USD"],
-        index=0 if st.session_state.currency == "EUR" else 1
+        ["EUR", "USD", "GBP", "CAD", "CHF", "AUD", "JPY", "CNY", "INR", "THB", "BRL", "HKD", "RUB", "BZD"],
+        index=0  # Default: EUR
     )
     
     # Lista degli hotel
@@ -354,16 +257,16 @@ def rate_checker_app():
     # Adulti e camere
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        num_adults = st.number_input("Adulti", min_value=1, max_value=8, value=2)
+        num_adults = st.number_input("Adulti", min_value=1, max_value=32, value=2)
     with col2:
-        num_rooms = st.number_input("Camere", min_value=1, max_value=4, value=1)
+        num_rooms = st.number_input("Camere", min_value=1, max_value=8, value=1)
     
     # Gestione bambini
     has_children = st.sidebar.checkbox("Aggiungi bambini")
     children_ages = []
     
     if has_children:
-        num_children = st.sidebar.number_input("Numero bambini", min_value=1, max_value=6, value=1)
+        num_children = st.sidebar.number_input("Numero bambini", min_value=1, max_value=16, value=1)
         
         for i in range(num_children):
             age = st.sidebar.number_input(
@@ -437,13 +340,12 @@ def rate_checker_app():
                     # Processa la risposta, considerando il numero di notti
                     df = process_xotelo_response(
                         response, 
-                        hotel, 
-                        currency_converter, 
-                        currency,
+                        hotel,
                         num_nights,
                         num_adults,
                         len(children_ages) if has_children else 0,
-                        num_rooms
+                        num_rooms,
+                        currency
                     )
                     
                     all_data.append(df)
@@ -519,6 +421,13 @@ def rate_checker_app():
                 "Clicca 'Cerca tariffe' per aggiornare i dati con la nuova occupanza."
             )
         
+        # Avviso se la valuta corrente è diversa da quella nei dati
+        if current_currency != currency:
+            st.warning(
+                f"La valuta selezionata ({currency}) è diversa da quella nei dati visualizzati ({current_currency}). "
+                "Clicca 'Cerca tariffe' per aggiornare i dati con la nuova valuta."
+            )
+        
         # Aggiorna il conteggio delle notti se è cambiato
         if "num_nights" in st.session_state and st.session_state.num_nights != num_nights:
             # Ricalcola i prezzi totali con il nuovo numero di notti
@@ -527,30 +436,13 @@ def rate_checker_app():
             st.session_state.rate_data = df
             st.info(f"Prezzi totali aggiornati per {num_nights} notti")
         
-        # Se l'utente ha cambiato la valuta, aggiorna i prezzi
-        if current_currency != currency:
-            # Converti i prezzi alla nuova valuta
-            if currency == "USD" and current_currency == "EUR":
-                df["price"] = df.apply(
-                    lambda row: currency_converter.convert(row["price"], "EUR", "USD") if row["available"] else 0, 
-                    axis=1
-                )
-                df["price_total"] = df["price"] * num_nights
-            elif currency == "EUR" and current_currency == "USD":
-                df["price"] = df.apply(
-                    lambda row: currency_converter.convert(row["price"], "USD", "EUR") if row["available"] else 0, 
-                    axis=1
-                )
-                df["price_total"] = df["price"] * num_nights
-            
-            # Aggiorna la valuta nella sessione
-            st.session_state.currency = currency
-            st.session_state.rate_data = df
-            
-            st.success(f"Prezzi convertiti in {currency}")
-        
         # Simbolo della valuta
-        currency_symbol = "€" if currency == "EUR" else "$"
+        currency_symbols = {
+            "EUR": "€", "USD": "$", "GBP": "£", "CAD": "CA$", "CHF": "CHF", 
+            "AUD": "A$", "JPY": "¥", "CNY": "¥", "INR": "₹", "THB": "฿", 
+            "BRL": "R$", "HKD": "HK$", "RUB": "₽", "BZD": "BZ$"
+        }
+        currency_symbol = currency_symbols.get(current_currency, current_currency)
         
         # Visualizza la scheda principale
         st.header(f"Confronto tariffe tra OTA (Prezzi {price_description})")
@@ -760,17 +652,6 @@ def rate_checker_app():
     else:
         st.info("Clicca su 'Cerca tariffe' per recuperare i dati tariffari")
     
-    # Informazioni sul tasso di cambio
-    with st.expander("Informazioni sul tasso di cambio"):
-        st.write("""
-        Questa applicazione utilizza i tassi di cambio ufficiali della Banca Centrale Europea (BCE) tramite l'API Frankfurter.
-        
-        I tassi di cambio vengono aggiornati ogni ora per garantire la massima precisione. In caso di problemi di connessione,
-        viene utilizzata l'API ExchangeRate.host come fonte alternativa.
-        
-        Se entrambe le fonti non sono disponibili, viene utilizzato un tasso di fallback approssimativo.
-        """)
-    
     # Informazioni sull'API Xotelo e l'occupanza
     with st.expander("Informazioni sui parametri di occupanza"):
         st.write("""
@@ -780,6 +661,7 @@ def rate_checker_app():
         - Numero di adulti (1-32)
         - Età dei bambini (0-17 anni)
         - Numero di camere (1-8)
+        - Valuta (EUR, USD, GBP, ecc.)
         
         Modificando questi parametri e facendo una nuova ricerca, otterrai i prezzi aggiornati per la configurazione scelta.
         """)
@@ -798,7 +680,7 @@ def rate_checker_app():
     
     # Informazioni sulla versione
     st.sidebar.markdown("---")
-    st.sidebar.info("Versione 0.3.1 - Con supporto per l'occupanza")
+    st.sidebar.info("Versione 0.3.2 - Con supporto per valute native")
 
 # Esegui l'app
 if __name__ == "__main__":
