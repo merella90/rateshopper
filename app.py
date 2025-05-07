@@ -152,8 +152,8 @@ def process_xotelo_response(response, hotel_name, currency_converter, target_cur
             "ota": "N/A",
             "ota_code": "N/A",
             "price_usd": 0,
-            "price": 0,
-            "price_total": 0,
+            "price_night": 0,  # Rinominato per chiarezza: prezzo per notte
+            "price_total": 0,   # Prezzo totale per il soggiorno
             "currency": target_currency,
             "check_in": "",
             "check_out": "",
@@ -173,7 +173,7 @@ def process_xotelo_response(response, hotel_name, currency_converter, target_cur
             "ota": "N/A",
             "ota_code": "N/A",
             "price_usd": 0,
-            "price": 0,
+            "price_night": 0,
             "price_total": 0,
             "currency": target_currency,
             "check_in": check_in,
@@ -194,9 +194,9 @@ def process_xotelo_response(response, hotel_name, currency_converter, target_cur
             "hotel": hotel_name,
             "ota": rate.get("name", ""),
             "ota_code": rate.get("code", ""),
-            "price_usd": usd_price,  # Conserviamo anche il prezzo in USD
-            "price": price_per_night,  # Prezzo per notte
-            "price_total": total_price,  # Prezzo totale per il soggiorno
+            "price_usd": usd_price,
+            "price_night": price_per_night,  # Prezzo per notte
+            "price_total": total_price,      # Prezzo totale per il soggiorno
             "currency": target_currency,
             "check_in": check_in,
             "check_out": check_out,
@@ -255,9 +255,18 @@ def rate_checker_app():
     else:
         st.sidebar.info(f"Durata soggiorno: {num_nights} {'notte' if num_nights == 1 else 'notti'}")
     
-    # Toggle per visualizzare prezzi giornalieri o totali
-    show_total_price = st.sidebar.toggle("Mostra prezzi totali", value=True)
-    price_description = f"Prezzi {'totali' if show_total_price else 'per notte'}"
+    # Visualizzazione dei prezzi
+    price_view = st.sidebar.radio(
+        "Visualizza prezzi",
+        ["Totali", "Per notte"],
+        index=0,  # Default: prezzi totali
+        help="Scegli se visualizzare i prezzi totali per tutto il soggiorno o i prezzi per notte"
+    )
+    
+    # Determina quale colonna di prezzo usare
+    use_total_price = (price_view == "Totali")
+    price_column = "price_total" if use_total_price else "price_night"
+    price_description = f"{'totali per ' + str(num_nights) + ' notti' if use_total_price else 'per notte'}"
     
     # Bottone per eseguire la ricerca
     if st.sidebar.button("Cerca tariffe"):
@@ -329,25 +338,26 @@ def rate_checker_app():
         # Aggiorna il conteggio delle notti se è cambiato
         if "num_nights" in st.session_state and st.session_state.num_nights != num_nights:
             # Ricalcola i prezzi totali con il nuovo numero di notti
-            df["price_total"] = df["price"] * num_nights
+            df["price_total"] = df["price_night"] * num_nights
             st.session_state.num_nights = num_nights
             st.session_state.rate_data = df
+            st.info(f"Prezzi totali aggiornati per {num_nights} notti")
         
         # Se l'utente ha cambiato la valuta, aggiorna i prezzi
         if current_currency != currency:
             # Converti i prezzi alla nuova valuta
             if currency == "USD" and current_currency == "EUR":
-                df["price"] = df.apply(
-                    lambda row: currency_converter.convert(row["price"], "EUR", "USD") if row["available"] else 0, 
+                df["price_night"] = df.apply(
+                    lambda row: currency_converter.convert(row["price_night"], "EUR", "USD") if row["available"] else 0, 
                     axis=1
                 )
-                df["price_total"] = df["price"] * num_nights
+                df["price_total"] = df["price_night"] * num_nights
             elif currency == "EUR" and current_currency == "USD":
-                df["price"] = df.apply(
-                    lambda row: currency_converter.convert(row["price"], "USD", "EUR") if row["available"] else 0, 
+                df["price_night"] = df.apply(
+                    lambda row: currency_converter.convert(row["price_night"], "USD", "EUR") if row["available"] else 0, 
                     axis=1
                 )
-                df["price_total"] = df["price"] * num_nights
+                df["price_total"] = df["price_night"] * num_nights
             
             # Aggiorna la valuta nella sessione
             st.session_state.currency = currency
@@ -358,11 +368,8 @@ def rate_checker_app():
         # Simbolo della valuta
         currency_symbol = "€" if currency == "EUR" else "$"
         
-        # Prezzo da visualizzare (totale o per notte)
-        price_column = "price_total" if show_total_price else "price"
-        
         # Visualizza la scheda principale
-        st.header(f"Confronto tariffe tra OTA ({price_description})")
+        st.header(f"Confronto tariffe tra OTA (Prezzi {price_description})")
         
         # Filtra solo hotel disponibili per la selezione
         available_hotels = df[df["available"]]["hotel"].unique()
@@ -378,6 +385,10 @@ def rate_checker_app():
             hotel_df = df[(df["hotel"] == selected_hotel) & df["available"]]
             
             if not hotel_df.empty:
+                # Conteggio OTA disponibili
+                ota_count = len(hotel_df["ota"].unique())
+                st.info(f"Trovate {ota_count} OTA per {selected_hotel}")
+                
                 # Grafico delle tariffe per OTA
                 fig = px.bar(
                     hotel_df,
@@ -412,53 +423,92 @@ def rate_checker_app():
                 col1, col2 = st.columns(2)
                 with col1:
                     # Prezzo per notte
-                    min_price_night = hotel_df["price"].min()
-                    st.info(f"Prezzo minimo per notte: {currency_symbol}{min_price_night:.2f}")
+                    min_price_night = hotel_df["price_night"].min()
+                    min_ota_night = hotel_df.loc[hotel_df["price_night"].idxmin(), "ota"]
+                    st.info(f"Prezzo minimo per notte: {currency_symbol}{min_price_night:.2f} via {min_ota_night}")
                 
                 with col2:
                     # Prezzo totale
                     min_price_total = hotel_df["price_total"].min()
-                    st.info(f"Prezzo totale per {num_nights} notti: {currency_symbol}{min_price_total:.2f}")
+                    min_ota_total = hotel_df.loc[hotel_df["price_total"].idxmin(), "ota"]
+                    st.info(f"Prezzo totale per {num_nights} notti: {currency_symbol}{min_price_total:.2f} via {min_ota_total}")
                 
                 # Tabella completa dei dati
-                st.subheader("Dettaglio tariffe per OTA")
+                st.subheader("Dettaglio tariffe per tutte le OTA")
                 # Creiamo una copia del dataframe per la visualizzazione
-                columns_to_show = ["ota", "price", "price_total"]
+                columns_to_show = ["ota", "price_night", "price_total"]
                 display_df = hotel_df[columns_to_show].sort_values(by=price_column).copy()
                 # Formatta i prezzi
-                display_df["price"] = display_df["price"].apply(lambda x: f"{currency_symbol}{x:.2f}")
+                display_df["price_night"] = display_df["price_night"].apply(lambda x: f"{currency_symbol}{x:.2f}")
                 display_df["price_total"] = display_df["price_total"].apply(lambda x: f"{currency_symbol}{x:.2f}")
                 # Rinomina le colonne per la visualizzazione
                 display_df.columns = ["OTA", f"Prezzo per notte ({currency_symbol})", f"Prezzo totale per {num_nights} notti ({currency_symbol})"]
                 st.dataframe(display_df, use_container_width=True)
             
             # Confronto tra hotel
-            st.header(f"Confronto tra hotel ({price_description})")
+            st.header(f"Confronto tra hotel (Prezzi {price_description})")
             
             # Filtra solo hotel disponibili
             available_df = df[df["available"]]
             
             if not available_df.empty:
-                # Trova il prezzo minimo per ciascun hotel
-                min_prices = available_df.groupby("hotel")[price_column].min().reset_index()
+                # Trova il prezzo minimo e quali OTA offrono il prezzo minimo per ciascun hotel
+                min_prices_data = []
+                for hotel in available_df["hotel"].unique():
+                    hotel_data = available_df[available_df["hotel"] == hotel]
+                    min_price_idx = hotel_data[price_column].idxmin()
+                    min_price_row = hotel_data.loc[min_price_idx]
+                    
+                    min_prices_data.append({
+                        "hotel": hotel,
+                        "min_price": min_price_row[price_column],
+                        "min_ota": min_price_row["ota"],
+                        "ota_count": len(hotel_data["ota"].unique())
+                    })
+                
+                min_prices_df = pd.DataFrame(min_prices_data)
                 
                 # Grafico di confronto
                 fig = px.bar(
-                    min_prices,
+                    min_prices_df,
                     x="hotel",
-                    y=price_column,
+                    y="min_price",
                     title=f"Prezzo minimo disponibile per hotel ({check_in_date.strftime('%d/%m/%Y')} - {check_out_date.strftime('%d/%m/%Y')})",
                     color="hotel",
-                    labels={price_column: f"Prezzo minimo {price_description} ({currency_symbol})", "hotel": "Hotel"}
+                    labels={"min_price": f"Prezzo minimo {price_description} ({currency_symbol})", "hotel": "Hotel"}
                 )
+                
+                # Aggiungi annotazioni con la OTA
+                for i, row in min_prices_df.iterrows():
+                    fig.add_annotation(
+                        x=row["hotel"],
+                        y=row["min_price"],
+                        text=f"via {row['min_ota']}",
+                        showarrow=False,
+                        yshift=10,
+                        font=dict(size=10)
+                    )
                 
                 st.plotly_chart(fig, use_container_width=True)
                 
                 # Tabella di confronto
                 st.subheader(f"Confronto prezzi minimi tra hotel ({price_description})")
-                display_min_prices = min_prices.copy()
-                display_min_prices[price_column] = display_min_prices[price_column].apply(lambda x: f"{currency_symbol}{x:.2f}")
-                st.dataframe(display_min_prices.sort_values(by=price_column), use_container_width=True)
+                display_min_prices = min_prices_df.copy()
+                display_min_prices["min_price"] = display_min_prices["min_price"].apply(lambda x: f"{currency_symbol}{x:.2f}")
+                display_min_prices.columns = ["Hotel", "Prezzo minimo", "OTA", "Numero OTA disponibili"]
+                st.dataframe(display_min_prices.sort_values(by="Prezzo minimo"), use_container_width=True)
+                
+                # Visualizza tutte le OTA disponibili per ciascun hotel
+                st.subheader("Tutte le OTA disponibili per hotel")
+                all_otas_by_hotel = {}
+                
+                for hotel in available_df["hotel"].unique():
+                    hotel_data = available_df[available_df["hotel"] == hotel]
+                    all_otas_by_hotel[hotel] = sorted(hotel_data["ota"].unique())
+                
+                for hotel, otas in all_otas_by_hotel.items():
+                    with st.expander(f"{hotel} - {len(otas)} OTA disponibili"):
+                        st.write(", ".join(otas))
                 
                 # Analisi parità tariffaria
                 st.header("Analisi parità tariffaria")
