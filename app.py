@@ -14,72 +14,74 @@ st.set_page_config(
     layout="wide"
 )
 
-# CSS personalizzato per colorare la sidebar e posizionare il logo
+# CSS migliorato per la sidebar e i componenti
 st.markdown(
     """
     <style>
+    /* Colore base e variabili */
+    :root {
+        --primary: #0f7378;
+        --primary-light: #1a8e94;
+        --primary-dark: #0a5c60;
+        --accent: #ff9f4a;      /* Un arancione caldo invece del rosso */
+        --text: white;
+        --text-secondary: rgba(255, 255, 255, 0.8);
+    }
+    
+    /* Sidebar background */
     [data-testid="stSidebar"] {
-        background-color: #0f7378 !important;
-        color: white !important;
+        background-color: var(--primary) !important;
+        color: var(--text) !important;
     }
-    [data-testid="stSidebar"] .css-1d391kg {
-        padding-top: 0;
+    
+    /* Miglioramento pills multi-select */
+    .stMultiSelect span[data-baseweb="tag"] {
+        background-color: var(--primary-dark) !important;
+        color: var(--text) !important;
     }
-    [data-testid="stSidebar"] .block-container {
-        padding-top: 0;
+    
+    .stMultiSelect span[data-baseweb="tag"] span[role="button"] {
+        color: var(--text) !important;
     }
-    .sidebar-logo {
-        text-align: center;
-        padding: 10px 0;
-        background-color: #0f7378;
+    
+    /* Radio buttons e checkbox */
+    [data-testid="stSidebar"] .stRadio label span[data-testid="stMarkdownContainer"] {
+        color: var(--text) !important;
     }
+    
+    [data-testid="stSidebar"] .stRadio input[type="radio"] {
+        accent-color: var(--accent) !important;
+    }
+    
+    [data-testid="stSidebar"] .stCheckbox input[type="checkbox"] {
+        accent-color: var(--accent) !important;
+    }
+    
+    /* Bottoni */
     [data-testid="stSidebar"] button {
-        color: white !important;
-        border-color: white !important;
+        background-color: var(--accent) !important;
+        color: #333 !important;
+        border: none !important;
+        font-weight: bold !important;
     }
-    [data-testid="stSidebar"] .stRadio label {
-        color: white !important;
+    
+    [data-testid="stSidebar"] button:hover {
+        background-color: #ff8c2a !important;
     }
-    [data-testid="stSidebar"] .stCheckbox label {
-        color: white !important;
+    
+    /* Campi di input */
+    [data-testid="stSidebar"] input {
+        border-radius: 4px !important;
+        border: 1px solid var(--primary-dark) !important;
     }
-    [data-testid="stSidebar"] .stSelectbox label {
-        color: white !important;
-    }
-    [data-testid="stSidebar"] .stDateInput label {
-        color: white !important;
-    }
-    [data-testid="stSidebar"] .stNumberInput label {
-        color: white !important;
-    }
-    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, 
-    [data-testid="stSidebar"] h4, [data-testid="stSidebar"] h5, [data-testid="stSidebar"] h6,
-    [data-testid="stSidebar"] p {
-        color: white !important;
-    }
-    [data-testid="stSidebar"] .stMarkdown {
-        color: white !important;
-    }
-    [data-testid="stSidebar"] .css-pkbazv {
-        color: white !important;
-    }
-    [data-testid="stSidebar"] .css-16idsys p {
-        color: white !important;
-    }
-    [data-testid="stSidebar"] .e1nzilvr1 {
-        color: white !important;
+    
+    /* Info box e success message */
+    [data-testid="stSidebar"] .stAlert {
+        background-color: var(--primary-dark) !important;
+        color: var(--text) !important;
+        border: 1px solid var(--text-secondary) !important;
     }
     </style>
-    """,
-    unsafe_allow_html=True
-)
-
-# Logo nella sidebar (placeholder)
-st.sidebar.markdown(
-    """
-    <div class="sidebar-logo">
-        <img src="https://placeholder.com/wp-content/uploads/2018/10/placeholder.png" alt="Rate Vision Logo" width="180">
-    </div>
     """,
     unsafe_allow_html=True
 )
