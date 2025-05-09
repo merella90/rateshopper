@@ -14,9 +14,8 @@ st.set_page_config(
     layout="wide"
 )
 
-# CSS personalizzato per colorare la sidebar e posizionare il logo
 st.markdown(
-    f"""
+    """
     <style>
     [data-testid="stSidebar"] {
         background-color: #0f7378 !important;
@@ -74,9 +73,8 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Logo nella sidebar (placeholder)
 st.sidebar.markdown(
-    f"""
+    """
     <div class="sidebar-logo">
         <img src="https://placeholder.com/wp-content/uploads/2018/10/placeholder.png" alt="Rate Vision Logo" width="180">
     </div>
