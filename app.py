@@ -6,11 +6,82 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import requests
 import json
+import base64
 
 st.set_page_config(
     page_title="Rate Checker VOI Alimini (BETA)",
     page_icon="📊",
     layout="wide"
+)
+
+# CSS personalizzato per colorare la sidebar e posizionare il logo
+st.markdown(
+    f"""
+    <style>
+    [data-testid="stSidebar"] {
+        background-color: #0f7378 !important;
+        color: white !important;
+    }
+    [data-testid="stSidebar"] .css-1d391kg {
+        padding-top: 0;
+    }
+    [data-testid="stSidebar"] .block-container {
+        padding-top: 0;
+    }
+    .sidebar-logo {
+        text-align: center;
+        padding: 10px 0;
+        background-color: #0f7378;
+    }
+    [data-testid="stSidebar"] button {
+        color: white !important;
+        border-color: white !important;
+    }
+    [data-testid="stSidebar"] .stRadio label {
+        color: white !important;
+    }
+    [data-testid="stSidebar"] .stCheckbox label {
+        color: white !important;
+    }
+    [data-testid="stSidebar"] .stSelectbox label {
+        color: white !important;
+    }
+    [data-testid="stSidebar"] .stDateInput label {
+        color: white !important;
+    }
+    [data-testid="stSidebar"] .stNumberInput label {
+        color: white !important;
+    }
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, 
+    [data-testid="stSidebar"] h4, [data-testid="stSidebar"] h5, [data-testid="stSidebar"] h6,
+    [data-testid="stSidebar"] p {
+        color: white !important;
+    }
+    [data-testid="stSidebar"] .stMarkdown {
+        color: white !important;
+    }
+    [data-testid="stSidebar"] .css-pkbazv {
+        color: white !important;
+    }
+    [data-testid="stSidebar"] .css-16idsys p {
+        color: white !important;
+    }
+    [data-testid="stSidebar"] .e1nzilvr1 {
+        color: white !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# Logo nella sidebar (placeholder)
+st.sidebar.markdown(
+    f"""
+    <div class="sidebar-logo">
+        <img src="https://placeholder.com/wp-content/uploads/2018/10/placeholder.png" alt="Rate Vision Logo" width="180">
+    </div>
+    """,
+    unsafe_allow_html=True
 )
 
 class XoteloAPI:
@@ -1166,7 +1237,7 @@ def rate_checker_app():
         """)
     
     st.sidebar.markdown("---")
-    st.sidebar.info("Versione 0.4.4 - Developed by Alessandro Merella with Xotelo API")
+    st.sidebar.info("Versione 0.5.0 - Developed by Alessandro Merella with Xotelo API")
 
 if __name__ == "__main__":
     rate_checker_app()
