@@ -14,6 +14,7 @@ st.set_page_config(
     layout="wide"
 )
 
+# CSS personalizzato per colorare la sidebar e posizionare il logo
 st.markdown(
     """
     <style>
@@ -73,6 +74,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# Logo nella sidebar (placeholder)
 st.sidebar.markdown(
     """
     <div class="sidebar-logo">
