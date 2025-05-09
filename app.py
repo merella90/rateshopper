@@ -18,7 +18,6 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* Contenitore del logo */
     .sidebar-logo {
         text-align: center;
         padding: 20px 0;
@@ -27,7 +26,6 @@ st.markdown(
         background-color: rgba(255, 255, 255, 0.05);
     }
     
-    /* Stile immagine logo */
     .sidebar-logo img {
         max-width: 80%;
         height: auto;
@@ -55,7 +53,7 @@ st.markdown(
 st.sidebar.markdown(
     """
     <div class="sidebar-logo">
-        <img src="https://i.ibb.co/XXhvHzB/rate-vision-logo-white.png" alt="Rate Vision Logo">
+        <img src="https://revguardian.altervista.org/images/revguardian_rv_logo.png" alt="Rate Vision Logo">
         <div class="logo-subtitle">Hotel Rate Intelligence</div>
     </div>
     """,
