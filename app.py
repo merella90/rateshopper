@@ -1029,20 +1029,40 @@ def rate_checker_app():
                         
                         st.plotly_chart(scatter_fig, use_container_width=True)
                         
-                        st.subheader("Servizi offerti dagli hotel")
+                        # Tabella confronto rating per tutti gli hotel (modificata come richiesto)
+                        st.subheader("Confronto Rating e Prezzi")
                         
-                        amenities_display = []
-                        for i, row in rating_df.iterrows():
-                            amenities_list = row["amenities"].split(", ")
-                            amenities_display.append({
-                                "Hotel": row["hotel"],
-                                "Rating": f"{row['rating']}/5",
-                                "Prezzo minimo": f"{currency_symbol}{row['min_price']:.2f}",
-                                "Servizi": ", ".join(amenities_list)
+                        # Creazione della tabella comparativa con tutti gli hotel disponibili
+                        rating_comparison = []
+                        for hotel_name in hotel_keys.keys():
+                            # Trova questo hotel nei dati di rating
+                            hotel_rating_info = hotel_info_df[hotel_info_df["our_hotel_name"] == hotel_name]
+                            
+                            # Trova il prezzo minimo se disponibile
+                            min_price = None
+                            if hotel_name in available_df["hotel"].unique():
+                                hotel_data = available_df[available_df["hotel"] == hotel_name]
+                                min_price = hotel_data[price_column].min()
+                            
+                            # Prepara i dati per la tabella
+                            rating = "N/A"
+                            review_count = 0
+                            if not hotel_rating_info.empty:
+                                rating_value = hotel_rating_info.iloc[0]["rating"]
+                                review_count = hotel_rating_info.iloc[0]["review_count"]
+                                rating = f"{rating_value}/5"
+                            
+                            price_display = f"{currency_symbol}{min_price:.2f}" if min_price is not None else "Non disponibile"
+                            
+                            rating_comparison.append({
+                                "Hotel": hotel_name,
+                                "Rating": rating,
+                                "Prezzo minimo": price_display
                             })
                         
-                        amenities_df = pd.DataFrame(amenities_display)
-                        st.dataframe(amenities_df, use_container_width=True)
+                        # Crea e mostra la tabella di confronto rating
+                        comparison_df = pd.DataFrame(rating_comparison)
+                        st.dataframe(comparison_df, use_container_width=True)
                     else:
                         st.warning("Non è stato possibile abbinare i dati di rating con i prezzi degli hotel.")
                 else:
@@ -1073,10 +1093,11 @@ def rate_checker_app():
         2. Osserva l'URL, che sarà simile a: `https://www.tripadvisor.it/Hotel_Review-g1234567-d12345678-Reviews-Hotel_Name.html`
         3. La chiave è la parte `g1234567-d12345678`
         
+        Le chiavi sono universali e funzionano sia con TripAdvisor.it che con TripAdvisor.com.
         """)
     
     st.sidebar.markdown("---")
-    st.sidebar.info("Version 0.4.2 - Developed by Alessandro Merella using Xotelo API")
+    st.sidebar.info("Versione 0.4.3 - Developed by Alessandro Merella with Xotelo API")
 
 if __name__ == "__main__":
     rate_checker_app()
