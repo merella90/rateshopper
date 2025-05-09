@@ -14,11 +14,19 @@ st.set_page_config(
     layout="wide"
 )
 
+# Aggiunta di Font Awesome per le icone
 st.markdown(
     """
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    """,
+    unsafe_allow_html=True
+)
+
+# CSS personalizzato per la sidebar e gli elementi
+st.markdown(
+    """
     <style>
-    /* Colori base e stile sidebar */
+    /* Colori base */
     [data-testid="stSidebar"] {
         background-color: #0f7378 !important;
         color: white !important;
@@ -30,6 +38,7 @@ st.markdown(
         padding-top: 0;
     }
     
+    /* Contenitore del logo */
     .sidebar-logo {
         text-align: center;
         padding: 20px 0;
@@ -38,6 +47,7 @@ st.markdown(
         background-color: rgba(255, 255, 255, 0.05);
     }
     
+    /* Stile immagine logo */
     .sidebar-logo img {
         max-width: 80%;
         height: auto;
@@ -45,10 +55,12 @@ st.markdown(
         transition: all 0.3s ease;
     }
     
+    /* Effetto hover sul logo */
     .sidebar-logo img:hover {
         transform: scale(1.05);
     }
     
+    /* Testo sottotitolo del logo */
     .logo-subtitle {
         color: rgba(255, 255, 255, 0.8);
         font-size: 12px;
@@ -56,41 +68,20 @@ st.markdown(
         font-style: italic;
     }
     
+    /* Elementi della sidebar */
     [data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"] {
         background-color: #0a5c60 !important;
         color: white !important;
-        border: 1px solid rgba(255, 255, 255, 0.3) !important;
-        border-radius: 4px !important;
-        margin: 2px !important;
-        padding: 5px 8px !important;
-        font-size: 0.9em !important;
-    }
-    
-    [data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"]:hover {
-        background-color: #084548 !important;
-        border-color: white !important;
-    }
-    
-    [data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"] button {
-        background-color: transparent !important;
-        color: rgba(255, 255, 255, 0.8) !important;
         border: none !important;
-        font-weight: bold !important;
-        padding: 0 4px !important;
-        margin-left: 5px !important;
     }
     
-    [data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"] button:hover {
-        color: white !important;
-        background-color: rgba(255, 255, 255, 0.1) !important;
-        border-radius: 50% !important;
-    }
-    
+    /* Radio e checkbox */
     [data-testid="stSidebar"] .stRadio input,
     [data-testid="stSidebar"] .stCheckbox input {
         accent-color: #f5f5f5 !important;
     }
     
+    /* Testo e label */
     [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, 
     [data-testid="stSidebar"] h4, [data-testid="stSidebar"] h5, [data-testid="stSidebar"] h6,
     [data-testid="stSidebar"] p {
@@ -109,6 +100,7 @@ st.markdown(
         color: white !important;
     }
     
+    /* Banner informativi */
     .info-banner {
         background-color: rgba(255, 255, 255, 0.1);
         border-left: 3px solid rgba(255, 255, 255, 0.7);
@@ -119,21 +111,25 @@ st.markdown(
         align-items: center;
     }
     
+    /* Icone per i banner */
     .info-banner i {
         margin-right: 10px;
         color: rgba(255, 255, 255, 0.9);
     }
     
+    /* Testo nei banner */
     .info-banner-text {
         font-size: 14px;
         font-weight: 500;
         color: white;
     }
     
+    /* Evidenziazione dei valori numerici */
     .info-banner-value {
         font-weight: 700;
     }
     
+    /* Stile bottone primario */
     [data-testid="stSidebar"] button[kind="primary"] {
         background-color: #f5f5f5 !important;
         color: #0a5c60 !important;
@@ -171,61 +167,30 @@ st.markdown(
         border-color: white !important;
     }
     
+    /* Stile bottoni di incremento/decremento nei number input */
     [data-testid="stSidebar"] [data-testid="stNumberInput"] button {
         background-color: #0a5c60 !important; 
         color: white !important;
-        border: 1px solid rgba(255, 255, 255, 0.3) !important;
+        border: none !important;
         border-radius: 4px !important;
         font-weight: bold !important;
-        width: 28px !important;
-        height: 28px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
     }
     
     [data-testid="stSidebar"] [data-testid="stNumberInput"] button:hover {
-        background-color: white !important;
-        color: #0a5c60 !important;
-        border-color: white !important;
-        transform: scale(1.05);
-        transition: all 0.2s;
-    }
-    
-    [data-testid="stSidebar"] [data-testid="stNumberInput"] input {
-        text-align: center !important;
-        font-size: 1.1em !important;
-        font-weight: 500 !important;
-        background-color: rgba(255, 255, 255, 0.9) !important;
-        color: #0a5c60 !important;
-        border: 1px solid rgba(255, 255, 255, 0.3) !important;
-    }
-    
-    [data-testid="stSidebar"] .stSelectbox select {
-        background-color: rgba(255, 255, 255, 0.9) !important;
-        color: #0a5c60 !important;
-        border-radius: 4px !important;
-        border: 1px solid rgba(255, 255, 255, 0.3) !important;
-    }
-    
-    [data-testid="stSidebar"] .stDateInput input {
-        background-color: rgba(255, 255, 255, 0.9) !important;
-        color: #0a5c60 !important;
-        border-radius: 4px !important;
-        border: 1px solid rgba(255, 255, 255, 0.3) !important;
-        text-align: center !important;
-    }
-    
-    [data-testid="stSidebar"] h1, 
-    [data-testid="stSidebar"] h2, 
-    [data-testid="stSidebar"] h3 {
-        margin-top: 20px !important;
-        margin-bottom: 10px !important;
-        font-weight: 600 !important;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.2) !important;
-        padding-bottom: 5px !important;
+        background-color: #084548 !important;
     }
     </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# Logo nella sidebar
+st.sidebar.markdown(
+    """
+    <div class="sidebar-logo">
+        <img src="https://i.ibb.co/XXhvHzB/rate-vision-logo-white.png" alt="Rate Vision Logo">
+        <div class="logo-subtitle">Hotel Rate Intelligence</div>
+    </div>
     """,
     unsafe_allow_html=True
 )
