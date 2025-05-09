@@ -14,30 +14,73 @@ st.set_page_config(
     layout="wide"
 )
 
-# CSS semplice e pulito che mantiene il tema originale
+# CSS per migliorare il logo
 st.markdown(
     """
     <style>
-    /* Colore base verde acqua originale */
+    /* Contenitore del logo */
+    .sidebar-logo {
+        text-align: center;
+        padding: 20px 0;
+        margin-bottom: 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        background-color: rgba(255, 255, 255, 0.05);
+    }
+    
+    /* Stile immagine logo */
+    .sidebar-logo img {
+        max-width: 80%;
+        height: auto;
+        filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.2));
+        transition: all 0.3s ease;
+    }
+    
+    /* Effetto hover sul logo */
+    .sidebar-logo img:hover {
+        transform: scale(1.05);
+    }
+    
+    /* Testo sottotitolo del logo */
+    .logo-subtitle {
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 12px;
+        margin-top: 5px;
+        font-style: italic;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+st.sidebar.markdown(
+    """
+    <div class="sidebar-logo">
+        <img src="https://i.ibb.co/XXhvHzB/rate-vision-logo-white.png" alt="Rate Vision Logo">
+        <div class="logo-subtitle">Hotel Rate Intelligence</div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    """
+    <style>
     [data-testid="stSidebar"] {
         background-color: #0f7378 !important;
         color: white !important;
     }
     
-    /* Uniformare tutti i componenti */
     [data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"] {
         background-color: #0a5c60 !important; /* Versione più scura del verde base */
         color: white !important;
         border: none !important;
     }
     
-    /* Radio e checkbox più coerenti */
     [data-testid="stSidebar"] .stRadio input,
     [data-testid="stSidebar"] .stCheckbox input {
         accent-color: #f5f5f5 !important;
     }
     
-    /* Pulsante più chiaro e definito */
     [data-testid="stSidebar"] button {
         background-color: #f5f5f5 !important;
         color: #0f7378 !important;
@@ -45,7 +88,6 @@ st.markdown(
         font-weight: 500 !important;
     }
     
-    /* Mantenere tutto il testo bianco */
     [data-testid="stSidebar"] p,
     [data-testid="stSidebar"] h1, 
     [data-testid="stSidebar"] h2, 
@@ -59,7 +101,6 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# CSS per migliorare i bottoni nella sidebar
 st.markdown(
     """
     <style>
