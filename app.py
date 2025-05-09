@@ -8,7 +8,7 @@ import requests
 import json
 
 st.set_page_config(
-    page_title="Rate Checker VOI Alimini (Xotelo API)",
+    page_title="Rate Checker VOI Alimini (Beta)",
     page_icon="📊",
     layout="wide"
 )
@@ -303,7 +303,7 @@ def normalize_dataframe(df, num_nights):
     return normalized_df
 
 def rate_checker_app():
-    st.title("Rate Checker VOI Alimini con Xotelo API")
+    st.title("Rate Checker VOI Alimini (Beta)")
     st.subheader("Confronto tariffe basato su TripAdvisor")
     
     if "currency" not in st.session_state:
@@ -1073,11 +1073,10 @@ def rate_checker_app():
         2. Osserva l'URL, che sarà simile a: `https://www.tripadvisor.it/Hotel_Review-g1234567-d12345678-Reviews-Hotel_Name.html`
         3. La chiave è la parte `g1234567-d12345678`
         
-        Le chiavi sono universali e funzionano sia con TripAdvisor.it che con TripAdvisor.com.
         """)
     
     st.sidebar.markdown("---")
-    st.sidebar.info("Versione 0.4.2 - Con miglioramenti nella gestione degli errori di API")
+    st.sidebar.info("Version 0.4.2 - Developed by Alessandro Merella using Xotelo API")
 
 if __name__ == "__main__":
     rate_checker_app()
