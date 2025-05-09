@@ -266,6 +266,70 @@ def process_heatmap_response(response, hotel_name):
     
     return None
 
+# Funzione per elaborare i dati degli hotel (incluso rating)
+def process_hotel_list_response(response):
+    """
+    Elabora la risposta dell'API List e la converte in un DataFrame con informazioni sugli hotel
+    
+    Args:
+        response (dict): Risposta JSON dell'API
+        
+    Returns:
+        pd.DataFrame: DataFrame con i dati degli hotel o None se non disponibili
+    """
+    # Verifica se la risposta contiene un errore o non ha risultati
+    if response.get("error") is not None or response.get("result") is None:
+        return None
+    
+    hotels_list = response.get("result", {}).get("list", [])
+    
+    if not hotels_list:
+        return None
+    
+    data = []
+    for hotel in hotels_list:
+        # Estrai informazioni di base dell'hotel
+        hotel_key = hotel.get("key", "")
+        name = hotel.get("name", "")
+        accommodation_type = hotel.get("accommodation_type", "")
+        url = hotel.get("url", "")
+        
+        # Estrai rating e review count
+        review_summary = hotel.get("review_summary", {})
+        rating = review_summary.get("rating", 0)
+        review_count = review_summary.get("count", 0)
+        
+        # Estrai prezzi minimi e massimi
+        price_ranges = hotel.get("price_ranges", {})
+        min_price = price_ranges.get("minimum", 0)
+        max_price = price_ranges.get("maximum", 0)
+        
+        # Estrai coordinate geografiche
+        geo = hotel.get("geo", {})
+        latitude = geo.get("latitude", 0)
+        longitude = geo.get("longitude", 0)
+        
+        # Estrai servizi/amenities
+        amenities = hotel.get("highlighted_amenities", [])
+        amenities_list = [a.get("name", "") for a in amenities]
+        amenities_str = ", ".join(amenities_list)
+        
+        data.append({
+            "hotel_key": hotel_key,
+            "name": name,
+            "accommodation_type": accommodation_type,
+            "url": url,
+            "rating": rating,
+            "review_count": review_count,
+            "min_price": min_price,
+            "max_price": max_price,
+            "latitude": latitude,
+            "longitude": longitude,
+            "amenities": amenities_str
+        })
+    
+    return pd.DataFrame(data)
+
 # Funzione per normalizzare il DataFrame
 def normalize_dataframe(df, num_nights):
     """
@@ -417,7 +481,7 @@ def rate_checker_app():
     
     # Reset dei dati
     if st.sidebar.button("Cancella dati salvati"):
-        keys_to_clear = ["rate_data", "heatmap_data"]
+        keys_to_clear = ["rate_data", "heatmap_data", "hotel_info"]
         for key in keys_to_clear:
             if key in st.session_state:
                 del st.session_state[key]
@@ -443,8 +507,9 @@ def rate_checker_app():
             progress_bar = st.progress(0)
             status_text = st.empty()
             
+            # Step 1: Ricerca delle tariffe
             for i, hotel in enumerate(selected_hotels):
-                progress = int(100 * i / (2 * len(selected_hotels)))
+                progress = int(100 * i / (3 * len(selected_hotels)))
                 progress_bar.progress(progress)
                 status_text.text(f"Elaborazione tariffe per {hotel}... ({i+1}/{len(selected_hotels)})")
                 
@@ -474,8 +539,9 @@ def rate_checker_app():
                     
                     all_data.append(df)
             
+            # Step 2: Ricerca delle heatmap
             for i, hotel in enumerate(selected_hotels):
-                progress = int(50 + 100 * i / (2 * len(selected_hotels)))
+                progress = int(33 + 100 * i / (3 * len(selected_hotels)))
                 progress_bar.progress(progress)
                 status_text.text(f"Elaborazione heatmap per {hotel}... ({i+1}/{len(selected_hotels)})")
                 
@@ -491,6 +557,35 @@ def rate_checker_app():
                     heatmap_data = process_heatmap_response(heatmap_response, hotel)
                     if heatmap_data:
                         all_heatmap_data.append(heatmap_data)
+            
+            # Step 3: Ricerca informazioni hotel (incluso rating)
+            status_text.text("Recupero informazioni hotel dalla località...")
+            progress_bar.progress(66)
+            
+            hotel_list_response = xotelo_api.get_hotel_list(
+                location_key,
+                limit=100,  # Richiedi più hotel per aumentare la probabilità di trovare i nostri
+                sort="best_value"
+            )
+            
+            hotel_info_df = process_hotel_list_response(hotel_list_response)
+            
+            # Filtra solo gli hotel che ci interessano
+            if hotel_info_df is not None:
+                # Crea un mapping dalla chiave hotel al nome per un match più facile
+                hotel_key_to_name = {v: k for k, v in hotel_keys.items()}
+                
+                # Aggiungi una colonna con i nomi dei nostri hotel
+                hotel_info_df["our_hotel_name"] = hotel_info_df["hotel_key"].apply(
+                    lambda x: hotel_key_to_name.get(x, "")
+                )
+                
+                # Filtra solo gli hotel che ci interessano
+                filtered_hotel_info = hotel_info_df[hotel_info_df["our_hotel_name"] != ""].copy()
+                
+                # Se abbiamo trovato qualche hotel, salva i dati
+                if not filtered_hotel_info.empty:
+                    st.session_state.hotel_info = filtered_hotel_info
             
             progress_bar.progress(100)
             status_text.text("Elaborazione completata!")
@@ -591,7 +686,7 @@ def rate_checker_app():
         currency_symbol = currency_symbols.get(current_currency, current_currency)
         
         # Crea tabs per diversi tipi di visualizzazioni
-        tabs = st.tabs(["Confronto Tariffe", "Calendari Prezzi", "Analisi Comparativa"])
+        tabs = st.tabs(["Confronto Tariffe", "Calendari Prezzi", "Analisi Comparativa", "Rating e Qualità"])
         
         # Tab 1: Confronto tariffe tra OTA
         with tabs[0]:
@@ -1001,6 +1096,163 @@ def rate_checker_app():
                 unavailable_df = df[~df["available"]][["hotel", "message"]].drop_duplicates()
                 st.warning(f"I seguenti hotel non hanno disponibilità: {', '.join(unavailable_hotels)}")
                 st.dataframe(unavailable_df, use_container_width=True)
+        
+        # Tab 4: Rating e Qualità
+        with tabs[3]:
+            st.header("Rating e Qualità degli Hotel")
+            
+            if "hotel_info" in st.session_state and not st.session_state.hotel_info.empty:
+                hotel_info_df = st.session_state.hotel_info
+                
+                # Verifica se ci sono dati di rating
+                has_rating = "rating" in hotel_info_df.columns and (hotel_info_df["rating"] > 0).any()
+                
+                if has_rating:
+                    # Crea un dataframe per il confronto
+                    rating_data = []
+                    
+                    for _, row in hotel_info_df.iterrows():
+                        # Ottieni il prezzo minimo dell'hotel se disponibile
+                        hotel_name = row["our_hotel_name"]
+                        min_price = None
+                        
+                        if hotel_name in available_df["hotel"].unique():
+                            hotel_data = available_df[available_df["hotel"] == hotel_name]
+                            min_price = hotel_data[price_column].min()
+                        
+                        # Se abbiamo sia prezzo che rating, aggiungi ai dati
+                        if min_price is not None:
+                            rating_data.append({
+                                "hotel": hotel_name,
+                                "rating": row["rating"],
+                                "review_count": row["review_count"],
+                                "min_price": min_price,
+                                "amenities": row["amenities"]
+                            })
+                    
+                    if rating_data:
+                        rating_df = pd.DataFrame(rating_data)
+                        
+                        # 1. Dashboard di rating
+                        st.subheader("Valutazioni TripAdvisor degli hotel")
+                        
+                        # Visualizza rating con stelle
+                        for i, row in rating_df.iterrows():
+                            col1, col2 = st.columns([1, 3])
+                            with col1:
+                                st.markdown(f"**{row['hotel']}**")
+                            with col2:
+                                # Visualizza rating con stelle
+                                stars = "★" * int(row["rating"]) + "☆" * (5 - int(row["rating"]))
+                                decimal = row["rating"] - int(row["rating"])
+                                if decimal >= 0.5:
+                                    stars = stars.replace("☆", "✫", 1)
+                                
+                                st.markdown(f"{stars} ({row['rating']}/5 - {row['review_count']} recensioni)")
+                        
+                        # 2. Grafico a barre per il rating
+                        fig = px.bar(
+                            rating_df,
+                            x="hotel",
+                            y="rating",
+                            title="Rating degli hotel su TripAdvisor",
+                            color="rating",
+                            color_continuous_scale="Viridis",
+                            labels={"rating": "Punteggio (1-5)", "hotel": "Hotel"},
+                            text="rating"
+                        )
+                        
+                        fig.update_traces(texttemplate="%{text:.1f}", textposition="outside")
+                        fig.update_layout(yaxis_range=[0, 5.5])  # Imposta il range per mostrare stelle complete
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # 3. Grafico prezzo/rating (rapporto qualità/prezzo)
+                        st.subheader("Rapporto Qualità/Prezzo")
+                        
+                        # Calcola un indicatore di rapporto qualità/prezzo
+                        rating_df["quality_price_ratio"] = rating_df["rating"] / rating_df["min_price"] * 100
+                        
+                        # Ordina per miglior rapporto qualità/prezzo
+                        rating_df_sorted = rating_df.sort_values("quality_price_ratio", ascending=False)
+                        
+                        # Grafico a barre per il rapporto qualità/prezzo
+                        qp_fig = px.bar(
+                            rating_df_sorted,
+                            x="hotel",
+                            y="quality_price_ratio",
+                            title="Indice di Qualità/Prezzo (Rating/Prezzo × 100)",
+                            color="quality_price_ratio",
+                            color_continuous_scale="RdYlGn",
+                            labels={"quality_price_ratio": "Indice Q/P", "hotel": "Hotel"}
+                        )
+                        
+                        st.plotly_chart(qp_fig, use_container_width=True)
+                        
+                        # 4. Scatter plot prezzo vs rating
+                        scatter_fig = px.scatter(
+                            rating_df,
+                            x="min_price",
+                            y="rating",
+                            color="hotel",
+                            size="review_count",
+                            hover_name="hotel",
+                            labels={
+                                "min_price": f"Prezzo minimo {price_description} ({currency_symbol})",
+                                "rating": "Rating (1-5)",
+                                "review_count": "Numero recensioni"
+                            },
+                            title="Confronto Prezzo vs Rating"
+                        )
+                        
+                        # Aggiungi diagonale tratteggiata per indicare il rapporto qualità/prezzo medio
+                        price_min = rating_df["min_price"].min() * 0.8
+                        price_max = rating_df["min_price"].max() * 1.2
+                        avg_qp = rating_df["quality_price_ratio"].median() / 100
+                        
+                        scatter_fig.add_trace(
+                            go.Scatter(
+                                x=[price_min, price_max],
+                                y=[price_min * avg_qp, price_max * avg_qp],
+                                mode="lines",
+                                line=dict(dash="dash", color="gray"),
+                                name="Rapporto Q/P medio"
+                            )
+                        )
+                        
+                        # Aggiungi etichette degli hotel
+                        for i, row in rating_df.iterrows():
+                            scatter_fig.add_annotation(
+                                x=row["min_price"],
+                                y=row["rating"],
+                                text=row["hotel"],
+                                showarrow=False,
+                                yshift=10
+                            )
+                        
+                        st.plotly_chart(scatter_fig, use_container_width=True)
+                        
+                        # 5. Tabella dei servizi
+                        st.subheader("Servizi offerti dagli hotel")
+                        
+                        amenities_display = []
+                        for i, row in rating_df.iterrows():
+                            amenities_list = row["amenities"].split(", ")
+                            amenities_display.append({
+                                "Hotel": row["hotel"],
+                                "Rating": f"{row['rating']}/5",
+                                "Prezzo minimo": f"{currency_symbol}{row['min_price']:.2f}",
+                                "Servizi": ", ".join(amenities_list)
+                            })
+                        
+                        amenities_df = pd.DataFrame(amenities_display)
+                        st.dataframe(amenities_df, use_container_width=True)
+                    else:
+                        st.warning("Non è stato possibile abbinare i dati di rating con i prezzi degli hotel.")
+                else:
+                    st.warning("Nessun dato di rating disponibile per gli hotel selezionati.")
+            else:
+                st.warning("Nessun dato di rating disponibile. Effettua una ricerca tariffe per visualizzare i rating.")
     else:
         st.info("Clicca su 'Cerca tariffe' per recuperare i dati tariffari")
     
@@ -1032,7 +1284,7 @@ def rate_checker_app():
     
     # Informazioni sulla versione
     st.sidebar.markdown("---")
-    st.sidebar.info("Versione 0.4.0 - Con supporto per heatmap di prezzo")
+    st.sidebar.info("Versione 0.4.1 - Con supporto per rating, recensioni e analisi qualità/prezzo")
 
 # Esegui l'app
 if __name__ == "__main__":
