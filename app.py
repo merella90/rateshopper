@@ -188,7 +188,7 @@ st.markdown(
 st.sidebar.markdown(
     """
     <div class="sidebar-logo">
-        <img src="https://i.ibb.co/XXhvHzB/rate-vision-logo-white.png" alt="Rate Vision Logo">
+        <img src="https://revguardian.altervista.org/images/revguardian_rv_logo.png" alt="Rate Vision Logo">
         <div class="logo-subtitle">Hotel Rate Intelligence</div>
     </div>
     """,
