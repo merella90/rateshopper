@@ -14,10 +14,31 @@ st.set_page_config(
     layout="wide"
 )
 
-# CSS per migliorare il logo
+# Aggiunta di Font Awesome per le icone
+st.markdown(
+    """
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    """,
+    unsafe_allow_html=True
+)
+
+# CSS personalizzato per la sidebar e gli elementi
 st.markdown(
     """
     <style>
+    /* Colori base */
+    [data-testid="stSidebar"] {
+        background-color: #0f7378 !important;
+        color: white !important;
+    }
+    [data-testid="stSidebar"] .css-1d391kg {
+        padding-top: 0;
+    }
+    [data-testid="stSidebar"] .block-container {
+        padding-top: 0;
+    }
+    
+    /* Contenitore del logo */
     .sidebar-logo {
         text-align: center;
         padding: 20px 0;
@@ -26,6 +47,7 @@ st.markdown(
         background-color: rgba(255, 255, 255, 0.05);
     }
     
+    /* Stile immagine logo */
     .sidebar-logo img {
         max-width: 80%;
         height: auto;
@@ -45,64 +67,69 @@ st.markdown(
         margin-top: 5px;
         font-style: italic;
     }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-st.sidebar.markdown(
-    """
-    <div class="sidebar-logo">
-        <img src="https://revguardian.altervista.org/images/revguardian_rv_logo.png" alt="Rate Vision Logo">
-        <div class="logo-subtitle">Hotel Rate Intelligence</div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-st.markdown(
-    """
-    <style>
-    [data-testid="stSidebar"] {
-        background-color: #0f7378 !important;
-        color: white !important;
-    }
     
+    /* Elementi della sidebar */
     [data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"] {
-        background-color: #0a5c60 !important; /* Versione più scura del verde base */
+        background-color: #0a5c60 !important;
         color: white !important;
         border: none !important;
     }
     
+    /* Radio e checkbox */
     [data-testid="stSidebar"] .stRadio input,
     [data-testid="stSidebar"] .stCheckbox input {
         accent-color: #f5f5f5 !important;
     }
     
-    [data-testid="stSidebar"] button {
-        background-color: #f5f5f5 !important;
-        color: #0f7378 !important;
-        border: none !important;
-        font-weight: 500 !important;
+    /* Testo e label */
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, 
+    [data-testid="stSidebar"] h4, [data-testid="stSidebar"] h5, [data-testid="stSidebar"] h6,
+    [data-testid="stSidebar"] p {
+        color: white !important;
     }
-    
-    [data-testid="stSidebar"] p,
-    [data-testid="stSidebar"] h1, 
-    [data-testid="stSidebar"] h2, 
-    [data-testid="stSidebar"] h3,
-    [data-testid="stSidebar"] label,
     [data-testid="stSidebar"] .stMarkdown {
         color: white !important;
     }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-st.markdown(
-    """
-    <style>
-    /* Stile bottone primario (es. "Cerca tariffe") */
+    [data-testid="stSidebar"] .css-pkbazv {
+        color: white !important;
+    }
+    [data-testid="stSidebar"] .css-16idsys p {
+        color: white !important;
+    }
+    [data-testid="stSidebar"] .e1nzilvr1 {
+        color: white !important;
+    }
+    
+    /* Banner informativi */
+    .info-banner {
+        background-color: rgba(255, 255, 255, 0.1);
+        border-left: 3px solid rgba(255, 255, 255, 0.7);
+        padding: 10px 15px;
+        margin: 12px 0;
+        border-radius: 0 4px 4px 0;
+        display: flex;
+        align-items: center;
+    }
+    
+    /* Icone per i banner */
+    .info-banner i {
+        margin-right: 10px;
+        color: rgba(255, 255, 255, 0.9);
+    }
+    
+    /* Testo nei banner */
+    .info-banner-text {
+        font-size: 14px;
+        font-weight: 500;
+        color: white;
+    }
+    
+    /* Evidenziazione dei valori numerici */
+    .info-banner-value {
+        font-weight: 700;
+    }
+    
+    /* Stile bottone primario */
     [data-testid="stSidebar"] button[kind="primary"] {
         background-color: #f5f5f5 !important;
         color: #0a5c60 !important;
@@ -122,7 +149,7 @@ st.markdown(
         transform: translateY(-1px) !important;
     }
     
-    /* Stile bottone secondario (es. "Cancella dati salvati") */
+    /* Stile bottone secondario */
     [data-testid="stSidebar"] button[kind="secondary"] {
         background-color: transparent !important;
         color: white !important;
@@ -153,6 +180,17 @@ st.markdown(
         background-color: #084548 !important;
     }
     </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# Logo nella sidebar
+st.sidebar.markdown(
+    """
+    <div class="sidebar-logo">
+        <img src="https://i.ibb.co/XXhvHzB/rate-vision-logo-white.png" alt="Rate Vision Logo">
+        <div class="logo-subtitle">Hotel Rate Intelligence</div>
+    </div>
     """,
     unsafe_allow_html=True
 )
@@ -479,7 +517,18 @@ def rate_checker_app():
         st.sidebar.error("La data di check-out deve essere successiva alla data di check-in!")
         num_nights = 1
     else:
-        st.sidebar.info(f"Durata soggiorno: {num_nights} {'notte' if num_nights == 1 else 'notti'}")
+        # Banner informativo per durata soggiorno migliorato
+        st.sidebar.markdown(
+            f"""
+            <div class="info-banner">
+                <i class="fas fa-calendar-alt"></i>
+                <div class="info-banner-text">
+                    Durata soggiorno: <span class="info-banner-value">{num_nights} {'notte' if num_nights == 1 else 'notti'}</span>
+                </div>
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
     
     st.sidebar.header("Occupazione")
     
@@ -510,7 +559,18 @@ def rate_checker_app():
         occupancy_summary += f", {len(children_ages)} bambini"
     occupancy_summary += f" in {num_rooms} {'camera' if num_rooms == 1 else 'camere'}"
     
-    st.sidebar.success(f"Configurazione: {occupancy_summary}")
+    # Banner informativo per configurazione migliorato
+    st.sidebar.markdown(
+        f"""
+        <div class="info-banner">
+            <i class="fas fa-users"></i>
+            <div class="info-banner-text">
+                Configurazione: <span class="info-banner-value">{occupancy_summary}</span>
+            </div>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
     
     price_view = st.sidebar.radio(
         "Visualizza prezzi",
@@ -519,7 +579,7 @@ def rate_checker_app():
         help="Scegli se visualizzare i prezzi totali per tutto il soggiorno o i prezzi per notte"
     )
     
-    if st.sidebar.button("Cancella dati salvati"):
+    if st.sidebar.button("Cancella dati salvati", key="clear_data"):
         keys_to_clear = ["rate_data", "heatmap_data", "hotel_info", "raw_hotel_data"]
         for key in keys_to_clear:
             if key in st.session_state:
@@ -531,7 +591,7 @@ def rate_checker_app():
     price_column = "price_total" if use_total_price else "price"
     price_description = f"{'totali per ' + str(num_nights) + ' notti' if use_total_price else 'per notte'}"
     
-    if st.sidebar.button("Cerca tariffe"):
+    if st.sidebar.button("Cerca tariffe", key="search_rates"):
         xotelo_api = XoteloAPI()
         
         with st.spinner(f"Recupero tariffe e dati per {occupancy_summary}..."):
@@ -1310,7 +1370,7 @@ def rate_checker_app():
         """)
     
     st.sidebar.markdown("---")
-    st.sidebar.info("Versione 0.5.0 - Developed by Alessandro Merella with Xotelo API")
+    st.sidebar.info("Versione 0.5.1 - Developed by Alessandro Merella with Xotelo API")
 
 if __name__ == "__main__":
     rate_checker_app()
