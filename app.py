@@ -21,7 +21,7 @@ class XoteloAPI:
     
     def get_rates(self, hotel_key, check_in, check_out, adults=2, children_ages=None, rooms=1, currency="EUR"):
         """
-        Ottieni le tariffe per un hotel specifico con specifiche di occupanza
+        Ottieni le tariffe per un hotel specifico con specifiche di occupazione
         
         Args:
             hotel_key (str): Chiave TripAdvisor dell'hotel
@@ -51,6 +51,50 @@ class XoteloAPI:
             return response.json()
         except Exception as e:
             return {"error": str(e), "timestamp": 0, "result": None}
+    
+    def get_heatmap(self, hotel_key, check_out):
+        """
+        Ottieni i dati dell'heatmap dei prezzi per un hotel specifico
+        
+        Args:
+            hotel_key (str): Chiave TripAdvisor dell'hotel
+            check_out (str): Data di check-out in formato YYYY-MM-DD
+        """
+        endpoint = f"{self.base_url}/heatmap"
+        params = {
+            "hotel_key": hotel_key,
+            "chk_out": check_out
+        }
+        
+        try:
+            response = requests.get(endpoint, params=params)
+            return response.json()
+        except Exception as e:
+            return {"error": str(e), "timestamp": 0, "result": None}
+    
+    def get_hotel_list(self, location_key, limit=30, offset=0, sort="best_value"):
+        """
+        Ottieni la lista degli hotel in una località specifica
+        
+        Args:
+            location_key (str): Chiave TripAdvisor della località
+            limit (int): Limite di risultati (default 30, max 100)
+            offset (int): Offset per la paginazione (default 0)
+            sort (str): Criterio di ordinamento (default "best_value")
+        """
+        endpoint = f"{self.base_url}/list"
+        params = {
+            "location_key": location_key,
+            "limit": limit,
+            "offset": offset,
+            "sort": sort
+        }
+        
+        try:
+            response = requests.get(endpoint, params=params)
+            return response.json()
+        except Exception as e:
+            return {"error": str(e), "timestamp": 0, "result": None}
 
 # Dizionario delle chiavi TripAdvisor per gli hotel competitor
 hotel_keys = {
@@ -59,6 +103,9 @@ hotel_keys = {
     "Hotel Alpiselect Robinson Apulia": "g947837-d949958",  
     "Alpiclub Hotel Thalas Club": "g1179328-d1159227" 
 }
+
+# Chiave TripAdvisor per la località (Lecce/Salento)
+location_key = "g652004"  # Otranto, Puglia
 
 # Funzione per convertire la risposta API in DataFrame
 def process_xotelo_response(response, hotel_name, num_nights=1, adults=2, children_count=0, rooms=1, currency="EUR"):
@@ -145,6 +192,80 @@ def process_xotelo_response(response, hotel_name, num_nights=1, adults=2, childr
     
     return pd.DataFrame(data)
 
+# Funzione per elaborare i dati dell'heatmap
+def process_heatmap_response(response, hotel_name):
+    """
+    Elabora la risposta dell'API Heatmap e la converte in un formato adatto per la visualizzazione
+    
+    Args:
+        response (dict): Risposta JSON dell'API
+        hotel_name (str): Nome dell'hotel
+        
+    Returns:
+        dict: Dati formattati dell'heatmap o None se non disponibili
+    """
+    # Verifica se la risposta contiene un errore o non ha risultati
+    if response.get("error") is not None or response.get("result") is None:
+        return None
+    
+    heatmap_data = response.get("result", {}).get("heatmap", {})
+    
+    if not heatmap_data:
+        return None
+    
+    # Estrai le date per i diversi livelli di prezzo
+    average_days = heatmap_data.get("average_price_days", [])
+    cheap_days = heatmap_data.get("cheap_price_days", [])
+    high_days = heatmap_data.get("high_price_days", [])
+    
+    # Converti le stringhe di date in oggetti datetime per un migliore ordinamento e visualizzazione
+    formatted_average_days = [datetime.strptime(date, "%Y-%m-%d") for date in average_days]
+    formatted_cheap_days = [datetime.strptime(date, "%Y-%m-%d") for date in cheap_days]
+    formatted_high_days = [datetime.strptime(date, "%Y-%m-%d") for date in high_days]
+    
+    # Crea un DataFrame per tutte le date e il loro livello di prezzo
+    all_dates = []
+    
+    for date in formatted_cheap_days:
+        all_dates.append({
+            "hotel": hotel_name,
+            "date": date,
+            "price_level": "Economico",
+            "level_value": 1  # Per ordinamento e colore
+        })
+    
+    for date in formatted_average_days:
+        all_dates.append({
+            "hotel": hotel_name,
+            "date": date,
+            "price_level": "Medio",
+            "level_value": 2  # Per ordinamento e colore
+        })
+    
+    for date in formatted_high_days:
+        all_dates.append({
+            "hotel": hotel_name,
+            "date": date,
+            "price_level": "Alto",
+            "level_value": 3  # Per ordinamento e colore
+        })
+    
+    if all_dates:
+        df = pd.DataFrame(all_dates)
+        return {
+            "hotel": hotel_name,
+            "timestamp": response.get("timestamp", 0),
+            "check_out": response.get("result", {}).get("chk_out", ""),
+            "data": df,
+            "ranges": {
+                "cheap": formatted_cheap_days,
+                "average": formatted_average_days,
+                "high": formatted_high_days
+            }
+        }
+    
+    return None
+
 # Funzione per normalizzare il DataFrame
 def normalize_dataframe(df, num_nights):
     """
@@ -199,7 +320,7 @@ def normalize_dataframe(df, num_nights):
         elif "is_available" in columns:
             normalized_df.loc[~normalized_df["is_available"], "message"] = "Dati non disponibili/sold out"
     
-    # Assicurati che siano presenti le colonne per l'occupanza
+    # Assicurati che siano presenti le colonne per l'occupazione
     if "adults" not in columns:
         normalized_df["adults"] = 2  # Default
     if "children" not in columns:
@@ -251,8 +372,8 @@ def rate_checker_app():
     else:
         st.sidebar.info(f"Durata soggiorno: {num_nights} {'notte' if num_nights == 1 else 'notti'}")
     
-    # Parametri di occupanza
-    st.sidebar.header("Occupanza")
+    # Parametri di occupazione
+    st.sidebar.header("Occupazione")
     
     # Adulti e camere
     col1, col2 = st.sidebar.columns(2)
@@ -278,7 +399,7 @@ def rate_checker_app():
             )
             children_ages.append(age)
     
-    # Visualizzazione del riepilogo dell'occupanza
+    # Visualizzazione del riepilogo dell'occupazione
     occupancy_summary = f"{num_adults} adulti"
     if has_children:
         occupancy_summary += f", {len(children_ages)} bambini"
@@ -296,8 +417,10 @@ def rate_checker_app():
     
     # Reset dei dati
     if st.sidebar.button("Cancella dati salvati"):
-        if "rate_data" in st.session_state:
-            del st.session_state["rate_data"]
+        keys_to_clear = ["rate_data", "heatmap_data"]
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
         st.sidebar.success("Dati cancellati con successo.")
         st.rerun()
     
@@ -311,18 +434,19 @@ def rate_checker_app():
         # Inizializza l'API Xotelo
         xotelo_api = XoteloAPI()
         
-        with st.spinner(f"Recupero tariffe per {occupancy_summary}..."):
+        with st.spinner(f"Recupero tariffe e dati per {occupancy_summary}..."):
             # Raccogli i dati per ciascun hotel selezionato
             all_data = []
+            all_heatmap_data = []
             
             # Mostra stato debug
             progress_bar = st.progress(0)
             status_text = st.empty()
             
             for i, hotel in enumerate(selected_hotels):
-                progress = int(100 * i / len(selected_hotels))
+                progress = int(100 * i / (2 * len(selected_hotels)))
                 progress_bar.progress(progress)
-                status_text.text(f"Elaborazione {hotel}... ({i+1}/{len(selected_hotels)})")
+                status_text.text(f"Elaborazione tariffe per {hotel}... ({i+1}/{len(selected_hotels)})")
                 
                 hotel_key = hotel_keys.get(hotel, "")
                 if hotel_key:
@@ -350,6 +474,24 @@ def rate_checker_app():
                     
                     all_data.append(df)
             
+            for i, hotel in enumerate(selected_hotels):
+                progress = int(50 + 100 * i / (2 * len(selected_hotels)))
+                progress_bar.progress(progress)
+                status_text.text(f"Elaborazione heatmap per {hotel}... ({i+1}/{len(selected_hotels)})")
+                
+                hotel_key = hotel_keys.get(hotel, "")
+                if hotel_key:
+                    # Ottieni i dati dell'heatmap
+                    heatmap_response = xotelo_api.get_heatmap(
+                        hotel_key,
+                        check_out_date.strftime("%Y-%m-%d")
+                    )
+                    
+                    # Processa la risposta dell'heatmap
+                    heatmap_data = process_heatmap_response(heatmap_response, hotel)
+                    if heatmap_data:
+                        all_heatmap_data.append(heatmap_data)
+            
             progress_bar.progress(100)
             status_text.text("Elaborazione completata!")
             
@@ -370,6 +512,10 @@ def rate_checker_app():
                     "children_ages": children_ages if has_children else [],
                     "rooms": num_rooms
                 }
+                
+                # Memorizza i dati dell'heatmap
+                if all_heatmap_data:
+                    st.session_state.heatmap_data = all_heatmap_data
                 
                 # Conteggia gli hotel disponibili e non disponibili
                 available_hotels = normalized_df[normalized_df["available"]]["hotel"].unique()
@@ -393,7 +539,7 @@ def rate_checker_app():
         
         current_currency = st.session_state.currency
         
-        # Ottieni l'occupanza salvata
+        # Ottieni l'occupazione salvata
         saved_occupancy = st.session_state.get("occupancy", {
             "adults": 2,
             "children": 0,
@@ -401,14 +547,14 @@ def rate_checker_app():
             "rooms": 1
         })
         
-        # Visualizza il banner dell'occupanza attuale nei dati
+        # Visualizza il banner dell'occupazione attuale nei dati
         st.info(
             f"Prezzi visualizzati per: {saved_occupancy['adults']} adulti"
             f"{', ' + str(saved_occupancy['children']) + ' bambini' if saved_occupancy['children'] > 0 else ''}"
             f" in {saved_occupancy['rooms']} {'camera' if saved_occupancy['rooms'] == 1 else 'camere'}"
         )
         
-        # Avviso se l'occupanza corrente è diversa da quella nei dati
+        # Avviso se l'occupazione corrente è diversa da quella nei dati
         current_occupancy_different = (
             num_adults != saved_occupancy['adults'] or
             (len(children_ages) if has_children else 0) != saved_occupancy['children'] or
@@ -417,8 +563,8 @@ def rate_checker_app():
         
         if current_occupancy_different:
             st.warning(
-                "L'occupanza selezionata è diversa da quella usata per cercare i prezzi. "
-                "Clicca 'Cerca tariffe' per aggiornare i dati con la nuova occupanza."
+                "L'occupazione selezionata è diversa da quella usata per cercare i prezzi. "
+                "Clicca 'Cerca tariffe' per aggiornare i dati con la nuova occupazione."
             )
         
         # Avviso se la valuta corrente è diversa da quella nei dati
@@ -444,85 +590,305 @@ def rate_checker_app():
         }
         currency_symbol = currency_symbols.get(current_currency, current_currency)
         
-        # Visualizza la scheda principale
-        st.header(f"Confronto tariffe tra OTA (Prezzi {price_description})")
+        # Crea tabs per diversi tipi di visualizzazioni
+        tabs = st.tabs(["Confronto Tariffe", "Calendari Prezzi", "Analisi Comparativa"])
         
-        # Filtra solo hotel disponibili per la selezione
-        available_hotels = df[df["available"]]["hotel"].unique()
-        
-        if len(available_hotels) > 0:
-            # Seleziona l'hotel da analizzare
-            selected_hotel = st.selectbox(
-                "Seleziona hotel da analizzare",
-                available_hotels
-            )
+        # Tab 1: Confronto tariffe tra OTA
+        with tabs[0]:
+            st.header(f"Confronto tariffe tra OTA (Prezzi {price_description})")
             
-            # Filtra per l'hotel selezionato
-            hotel_df = df[(df["hotel"] == selected_hotel) & df["available"]]
+            # Filtra solo hotel disponibili per la selezione
+            available_hotels = df[df["available"]]["hotel"].unique()
             
-            if not hotel_df.empty:
-                # Conteggio OTA disponibili
-                ota_count = len(hotel_df["ota"].unique())
-                st.info(f"Trovate {ota_count} OTA per {selected_hotel}")
-                
-                # Grafico delle tariffe per OTA
-                fig = px.bar(
-                    hotel_df,
-                    x="ota",
-                    y=price_column,
-                    title=f"Tariffe per {selected_hotel} - {occupancy_summary} ({check_in_date.strftime('%d/%m/%Y')} - {check_out_date.strftime('%d/%m/%Y')})",
-                    color="ota",
-                    labels={price_column: f"Prezzo {price_description} ({currency_symbol})", "ota": "OTA"}
+            if len(available_hotels) > 0:
+                # Seleziona l'hotel da analizzare
+                selected_hotel = st.selectbox(
+                    "Seleziona hotel da analizzare",
+                    available_hotels
                 )
                 
-                st.plotly_chart(fig, use_container_width=True)
+                # Filtra per l'hotel selezionato
+                hotel_df = df[(df["hotel"] == selected_hotel) & df["available"]]
                 
-                # Statistiche principali
-                col1, col2, col3 = st.columns(3)
+                if not hotel_df.empty:
+                    # Conteggio OTA disponibili
+                    ota_count = len(hotel_df["ota"].unique())
+                    st.info(f"Trovate {ota_count} OTA per {selected_hotel}")
+                    
+                    # Grafico delle tariffe per OTA
+                    fig = px.bar(
+                        hotel_df,
+                        x="ota",
+                        y=price_column,
+                        title=f"Tariffe per {selected_hotel} - {occupancy_summary} ({check_in_date.strftime('%d/%m/%Y')} - {check_out_date.strftime('%d/%m/%Y')})",
+                        color="ota",
+                        labels={price_column: f"Prezzo {price_description} ({currency_symbol})", "ota": "OTA"}
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Statistiche principali
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        min_price = hotel_df[price_column].min()
+                        min_ota = hotel_df.loc[hotel_df[price_column].idxmin(), "ota"]
+                        st.metric("Prezzo minimo", f"{currency_symbol}{min_price:.2f}", f"via {min_ota}")
+                    
+                    with col2:
+                        max_price = hotel_df[price_column].max()
+                        max_ota = hotel_df.loc[hotel_df[price_column].idxmax(), "ota"]
+                        st.metric("Prezzo massimo", f"{currency_symbol}{max_price:.2f}", f"via {max_ota}")
+                    
+                    with col3:
+                        avg_price = hotel_df[price_column].mean()
+                        price_range = max_price - min_price
+                        st.metric("Prezzo medio", f"{currency_symbol}{avg_price:.2f}", f"Range: {currency_symbol}{price_range:.2f}")
+                    
+                    # Dettagli prezzo per notte vs totale
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        # Prezzo per notte
+                        min_price_night = hotel_df["price"].min()
+                        min_ota_night = hotel_df.loc[hotel_df["price"].idxmin(), "ota"]
+                        st.info(f"Prezzo minimo per notte: {currency_symbol}{min_price_night:.2f} via {min_ota_night}")
+                    
+                    with col2:
+                        # Prezzo totale
+                        min_price_total = hotel_df["price_total"].min()
+                        min_ota_total = hotel_df.loc[hotel_df["price_total"].idxmin(), "ota"]
+                        st.info(f"Prezzo totale per {num_nights} notti: {currency_symbol}{min_price_total:.2f} via {min_ota_total}")
+                    
+                    # Tabella completa dei dati
+                    st.subheader("Dettaglio tariffe per tutte le OTA")
+                    # Creiamo una copia del dataframe per la visualizzazione
+                    columns_to_show = ["ota", "price", "price_total"]
+                    display_df = hotel_df[columns_to_show].sort_values(by=price_column).copy()
+                    # Formatta i prezzi
+                    display_df["price"] = display_df["price"].apply(lambda x: f"{currency_symbol}{x:.2f}")
+                    display_df["price_total"] = display_df["price_total"].apply(lambda x: f"{currency_symbol}{x:.2f}")
+                    # Rinomina le colonne per la visualizzazione
+                    display_df.columns = ["OTA", f"Prezzo per notte ({currency_symbol})", f"Prezzo totale per {num_nights} notti ({currency_symbol})"]
+                    st.dataframe(display_df, use_container_width=True)
                 
-                with col1:
-                    min_price = hotel_df[price_column].min()
-                    min_ota = hotel_df.loc[hotel_df[price_column].idxmin(), "ota"]
-                    st.metric("Prezzo minimo", f"{currency_symbol}{min_price:.2f}", f"via {min_ota}")
+                # Visualizza tutte le OTA disponibili per ciascun hotel
+                st.subheader("Tutte le OTA disponibili per hotel")
+                available_df = df[df["available"]]
+                all_otas_by_hotel = {}
                 
-                with col2:
-                    max_price = hotel_df[price_column].max()
-                    max_ota = hotel_df.loc[hotel_df[price_column].idxmax(), "ota"]
-                    st.metric("Prezzo massimo", f"{currency_symbol}{max_price:.2f}", f"via {max_ota}")
+                for hotel in available_df["hotel"].unique():
+                    hotel_data = available_df[available_df["hotel"] == hotel]
+                    all_otas_by_hotel[hotel] = sorted(hotel_data["ota"].unique())
                 
-                with col3:
-                    avg_price = hotel_df[price_column].mean()
-                    price_range = max_price - min_price
-                    st.metric("Prezzo medio", f"{currency_symbol}{avg_price:.2f}", f"Range: {currency_symbol}{price_range:.2f}")
-                
-                # Dettagli prezzo per notte vs totale
-                col1, col2 = st.columns(2)
-                with col1:
-                    # Prezzo per notte
-                    min_price_night = hotel_df["price"].min()
-                    min_ota_night = hotel_df.loc[hotel_df["price"].idxmin(), "ota"]
-                    st.info(f"Prezzo minimo per notte: {currency_symbol}{min_price_night:.2f} via {min_ota_night}")
-                
-                with col2:
-                    # Prezzo totale
-                    min_price_total = hotel_df["price_total"].min()
-                    min_ota_total = hotel_df.loc[hotel_df["price_total"].idxmin(), "ota"]
-                    st.info(f"Prezzo totale per {num_nights} notti: {currency_symbol}{min_price_total:.2f} via {min_ota_total}")
-                
-                # Tabella completa dei dati
-                st.subheader("Dettaglio tariffe per tutte le OTA")
-                # Creiamo una copia del dataframe per la visualizzazione
-                columns_to_show = ["ota", "price", "price_total"]
-                display_df = hotel_df[columns_to_show].sort_values(by=price_column).copy()
-                # Formatta i prezzi
-                display_df["price"] = display_df["price"].apply(lambda x: f"{currency_symbol}{x:.2f}")
-                display_df["price_total"] = display_df["price_total"].apply(lambda x: f"{currency_symbol}{x:.2f}")
-                # Rinomina le colonne per la visualizzazione
-                display_df.columns = ["OTA", f"Prezzo per notte ({currency_symbol})", f"Prezzo totale per {num_nights} notti ({currency_symbol})"]
-                st.dataframe(display_df, use_container_width=True)
+                for hotel, otas in all_otas_by_hotel.items():
+                    with st.expander(f"{hotel} - {len(otas)} OTA disponibili"):
+                        st.write(", ".join(otas))
+            else:
+                st.warning("Nessun hotel disponibile per le date selezionate.")
+        
+        # Tab 2: Calendari dei prezzi (heatmap)
+        with tabs[1]:
+            st.header("Calendari Prezzi - Heatmap")
             
-            # Confronto tra hotel
-            st.header(f"Confronto tra hotel (Prezzi {price_description})")
+            if "heatmap_data" in st.session_state and st.session_state.heatmap_data:
+                heatmap_data = st.session_state.heatmap_data
+                
+                # Seleziona hotel per la visualizzazione dell'heatmap
+                available_hotels_heatmap = [data["hotel"] for data in heatmap_data]
+                
+                if available_hotels_heatmap:
+                    selected_hotel_heatmap = st.selectbox(
+                        "Seleziona hotel per visualizzare il calendario prezzi",
+                        available_hotels_heatmap,
+                        key="heatmap_hotel_selector"
+                    )
+                    
+                    # Trova i dati dell'heatmap per l'hotel selezionato
+                    hotel_heatmap = next((h for h in heatmap_data if h["hotel"] == selected_hotel_heatmap), None)
+                    
+                    if hotel_heatmap:
+                        # Crea un dataframe con tutte le date del mese corrente e successivo
+                        today = datetime.now()
+                        
+                        # Calcola le date del calendario
+                        start_date = today.replace(day=1)
+                        end_date = (today.replace(day=1) + timedelta(days=60)).replace(day=1)
+                        
+                        # Crea un calendario visivo con codice colore
+                        st.subheader(f"Calendario Prezzi per {selected_hotel_heatmap}")
+                        
+                        # Ottieni i dati dell'heatmap
+                        df_heatmap = hotel_heatmap["data"]
+                        
+                        # Converti la colonna delle date in stringa nel formato "YYYY-MM-DD" per il join
+                        df_heatmap["date_str"] = df_heatmap["date"].dt.strftime("%Y-%m-%d")
+                        
+                        # Crea un dataframe per ogni mese da visualizzare
+                        current_date = start_date
+                        months_to_show = 2
+                        
+                        for month_idx in range(months_to_show):
+                            # Nome del mese e anno
+                            month_name = current_date.strftime("%B %Y")
+                            
+                            # Calcola date per il mese corrente
+                            month_start = current_date.replace(day=1)
+                            if current_date.month == 12:  # Dicembre
+                                month_end = current_date.replace(year=current_date.year + 1, month=1, day=1) - timedelta(days=1)
+                            else:
+                                month_end = current_date.replace(month=current_date.month + 1, day=1) - timedelta(days=1)
+                            
+                            # Crea una lista di tutte le date nel mese
+                            all_days = [(month_start + timedelta(days=i)) for i in range((month_end - month_start).days + 1)]
+                            
+                            # Crea un DataFrame per il calendario
+                            calendar_data = []
+                            for day in all_days:
+                                day_str = day.strftime("%Y-%m-%d")
+                                
+                                # Trova il livello di prezzo per questa data
+                                price_level = "Non disponibile"
+                                level_value = 0
+                                
+                                # Cerca nel dataframe dell'heatmap
+                                match = df_heatmap[df_heatmap["date_str"] == day_str]
+                                if not match.empty:
+                                    price_level = match.iloc[0]["price_level"]
+                                    level_value = match.iloc[0]["level_value"]
+                                
+                                calendar_data.append({
+                                    "date": day,
+                                    "day": day.day,
+                                    "weekday": day.strftime("%a"),
+                                    "price_level": price_level,
+                                    "level_value": level_value
+                                })
+                            
+                            df_calendar = pd.DataFrame(calendar_data)
+                            
+                            # Crea una tabella per visualizzare il calendario
+                            st.subheader(month_name)
+                            
+                            # Definisci colori per i livelli di prezzo
+                            color_map = {
+                                "Non disponibile": "lightgrey",
+                                "Economico": "lightgreen",
+                                "Medio": "khaki",
+                                "Alto": "lightcoral"
+                            }
+                            
+                            # Converti il calendario in formato settimanale
+                            weeks = []
+                            week = [None] * 7  # 7 giorni in una settimana, inizializzati a None
+                            
+                            for i, row in df_calendar.iterrows():
+                                day = row["date"]
+                                weekday = day.weekday()  # 0 = Lunedì, 6 = Domenica
+                                
+                                # Riorganizza per iniziare la settimana da lunedì (0)
+                                week[weekday] = {
+                                    "day": day.day,
+                                    "price_level": row["price_level"],
+                                    "level_value": row["level_value"]
+                                }
+                                
+                                # Se è domenica (6) o l'ultimo giorno del mese, aggiungi la settimana
+                                if weekday == 6 or i == len(df_calendar) - 1:
+                                    weeks.append(week.copy())
+                                    week = [None] * 7
+                            
+                            # Crea HTML per visualizzare il calendario
+                            html_calendar = """
+                            <style>
+                                .calendar-table {
+                                    width: 100%;
+                                    border-collapse: collapse;
+                                }
+                                .calendar-table th, .calendar-table td {
+                                    border: 1px solid #ddd;
+                                    padding: 8px;
+                                    text-align: center;
+                                }
+                                .calendar-day {
+                                    font-weight: bold;
+                                    font-size: 16px;
+                                }
+                                .price-level {
+                                    font-size: 12px;
+                                }
+                                .price-non-disponibile { background-color: lightgrey; }
+                                .price-economico { background-color: lightgreen; }
+                                .price-medio { background-color: khaki; }
+                                .price-alto { background-color: lightcoral; }
+                            </style>
+                            <table class='calendar-table'>
+                                <tr>
+                                    <th>Lun</th>
+                                    <th>Mar</th>
+                                    <th>Mer</th>
+                                    <th>Gio</th>
+                                    <th>Ven</th>
+                                    <th>Sab</th>
+                                    <th>Dom</th>
+                                </tr>
+                            """
+                            
+                            for week in weeks:
+                                html_calendar += "<tr>"
+                                for day in week:
+                                    if day is None:
+                                        html_calendar += "<td></td>"
+                                    else:
+                                        price_level = day["price_level"].lower()
+                                        html_calendar += f"""
+                                        <td class='price-{price_level.replace(" ", "-")}'>
+                                            <div class='calendar-day'>{day["day"]}</div>
+                                            <div class='price-level'>{day["price_level"]}</div>
+                                        </td>
+                                        """
+                                html_calendar += "</tr>"
+                            
+                            html_calendar += "</table>"
+                            
+                            st.markdown(html_calendar, unsafe_allow_html=True)
+                            
+                            # Legenda
+                            legend_html = """
+                            <div style="display: flex; margin-top: 10px; justify-content: center;">
+                                <div style="display: flex; align-items: center; margin-right: 20px;">
+                                    <div style="width: 20px; height: 20px; background-color: lightgreen; margin-right: 5px;"></div>
+                                    <span>Economico</span>
+                                </div>
+                                <div style="display: flex; align-items: center; margin-right: 20px;">
+                                    <div style="width: 20px; height: 20px; background-color: khaki; margin-right: 5px;"></div>
+                                    <span>Medio</span>
+                                </div>
+                                <div style="display: flex; align-items: center; margin-right: 20px;">
+                                    <div style="width: 20px; height: 20px; background-color: lightcoral; margin-right: 5px;"></div>
+                                    <span>Alto</span>
+                                </div>
+                                <div style="display: flex; align-items: center;">
+                                    <div style="width: 20px; height: 20px; background-color: lightgrey; margin-right: 5px;"></div>
+                                    <span>Non disponibile</span>
+                                </div>
+                            </div>
+                            """
+                            
+                            st.markdown(legend_html, unsafe_allow_html=True)
+                            
+                            # Passa al mese successivo
+                            if current_date.month == 12:
+                                current_date = current_date.replace(year=current_date.year + 1, month=1)
+                            else:
+                                current_date = current_date.replace(month=current_date.month + 1)
+                else:
+                    st.warning("Nessun dato di calendario prezzi disponibile per gli hotel selezionati.")
+            else:
+                st.warning("Nessun dato di calendario prezzi disponibile. Effettua una ricerca tariffe per visualizzare i calendari.")
+        
+        # Tab 3: Analisi comparativa
+        with tabs[2]:
+            st.header("Analisi Comparativa")
             
             # Filtra solo hotel disponibili
             available_df = df[df["available"]]
@@ -574,20 +940,8 @@ def rate_checker_app():
                 display_min_prices.columns = ["Hotel", "Prezzo minimo", "OTA", "Numero OTA disponibili"]
                 st.dataframe(display_min_prices.sort_values(by="Prezzo minimo"), use_container_width=True)
                 
-                # Visualizza tutte le OTA disponibili per ciascun hotel
-                st.subheader("Tutte le OTA disponibili per hotel")
-                all_otas_by_hotel = {}
-                
-                for hotel in available_df["hotel"].unique():
-                    hotel_data = available_df[available_df["hotel"] == hotel]
-                    all_otas_by_hotel[hotel] = sorted(hotel_data["ota"].unique())
-                
-                for hotel, otas in all_otas_by_hotel.items():
-                    with st.expander(f"{hotel} - {len(otas)} OTA disponibili"):
-                        st.write(", ".join(otas))
-                
                 # Analisi parità tariffaria
-                st.header("Analisi parità tariffaria")
+                st.subheader("Analisi parità tariffaria")
                 
                 # Seleziona l'hotel di riferimento (default: VOI Alimini)
                 reference_hotel = "VOI Alimini" if "VOI Alimini" in available_df["hotel"].unique() else available_df["hotel"].iloc[0]
@@ -647,15 +1001,13 @@ def rate_checker_app():
                 unavailable_df = df[~df["available"]][["hotel", "message"]].drop_duplicates()
                 st.warning(f"I seguenti hotel non hanno disponibilità: {', '.join(unavailable_hotels)}")
                 st.dataframe(unavailable_df, use_container_width=True)
-        else:
-            st.warning("Nessun hotel disponibile per le date selezionate.")
     else:
         st.info("Clicca su 'Cerca tariffe' per recuperare i dati tariffari")
     
-    # Informazioni sull'API Xotelo e l'occupanza
-    with st.expander("Informazioni sui parametri di occupanza"):
+    # Informazioni sull'API Xotelo e l'occupazione
+    with st.expander("Informazioni sui parametri di occupazione"):
         st.write("""
-        I prezzi mostrati si riferiscono all'occupanza specificata nelle impostazioni (adulti, bambini e camere).
+        I prezzi mostrati si riferiscono all'occupazione specificata nelle impostazioni (adulti, bambini e camere).
         
         L'API Xotelo consente di specificare:
         - Numero di adulti (1-32)
@@ -680,7 +1032,7 @@ def rate_checker_app():
     
     # Informazioni sulla versione
     st.sidebar.markdown("---")
-    st.sidebar.info("Versione 0.3.2 - Con supporto per valute native")
+    st.sidebar.info("Versione 0.4.0 - Con supporto per heatmap di prezzo")
 
 # Esegui l'app
 if __name__ == "__main__":
