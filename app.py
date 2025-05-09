@@ -8,7 +8,7 @@ import requests
 import json
 
 st.set_page_config(
-    page_title="Rate Checker VOI Alimini (Beta)",
+    page_title="Rate Checker VOI Alimini (BETA)",
     page_icon="📊",
     layout="wide"
 )
@@ -376,7 +376,7 @@ def rate_checker_app():
     )
     
     if st.sidebar.button("Cancella dati salvati"):
-        keys_to_clear = ["rate_data", "heatmap_data", "hotel_info"]
+        keys_to_clear = ["rate_data", "heatmap_data", "hotel_info", "raw_hotel_data"]
         for key in keys_to_clear:
             if key in st.session_state:
                 del st.session_state[key]
@@ -393,12 +393,13 @@ def rate_checker_app():
         with st.spinner(f"Recupero tariffe e dati per {occupancy_summary}..."):
             all_data = []
             all_heatmap_data = []
+            all_raw_hotel_data = {}
             
             progress_bar = st.progress(0)
             status_text = st.empty()
             
             for i, hotel in enumerate(selected_hotels):
-                progress = int(100 * i / (3 * len(selected_hotels)))
+                progress = int(100 * i / (4 * len(selected_hotels)))
                 progress_bar.progress(progress)
                 status_text.text(f"Elaborazione tariffe per {hotel}... ({i+1}/{len(selected_hotels)})")
                 
@@ -427,7 +428,7 @@ def rate_checker_app():
                     all_data.append(df)
             
             for i, hotel in enumerate(selected_hotels):
-                progress = int(33 + 100 * i / (3 * len(selected_hotels)))
+                progress = int(25 + 100 * i / (4 * len(selected_hotels)))
                 progress_bar.progress(progress)
                 status_text.text(f"Elaborazione heatmap per {hotel}... ({i+1}/{len(selected_hotels)})")
                 
@@ -443,7 +444,7 @@ def rate_checker_app():
                         all_heatmap_data.append(heatmap_data)
             
             status_text.text("Recupero informazioni hotel dalla località...")
-            progress_bar.progress(66)
+            progress_bar.progress(50)
             
             try:
                 hotel_list_response = xotelo_api.get_hotel_list(
@@ -454,17 +455,66 @@ def rate_checker_app():
                 
                 hotel_info_df = process_hotel_list_response(hotel_list_response)
                 
-                if hotel_info_df is not None and not hotel_info_df.empty:
-                    hotel_key_to_name = {v: k for k, v in hotel_keys.items()}
+                if hotel_info_df is not None:
+                    all_raw_hotel_data["location_search"] = hotel_info_df.to_dict()
+                
+                individual_hotel_data = []
+                
+                for idx, (hotel_name, hotel_key) in enumerate(hotel_keys.items()):
+                    progress = int(75 + 25 * idx / len(hotel_keys))
+                    progress_bar.progress(progress)
+                    status_text.text(f"Recupero rating per {hotel_name}...")
                     
+                    location_id = hotel_key.split("-")[0]
+                    
+                    try:
+                        single_hotel_response = xotelo_api.get_hotel_list(
+                            location_id,
+                            limit=30, 
+                            sort="best_value"
+                        )
+                        
+                        single_hotel_df = process_hotel_list_response(single_hotel_response)
+                        
+                        if single_hotel_df is not None:
+                            all_raw_hotel_data[f"search_{hotel_name}"] = single_hotel_df.to_dict()
+                            
+                            match_hotel = single_hotel_df[single_hotel_df["hotel_key"] == hotel_key]
+                            if not match_hotel.empty:
+                                match_hotel = match_hotel.copy()
+                                match_hotel["our_hotel_name"] = hotel_name
+                                individual_hotel_data.append(match_hotel)
+                            else:
+                                st.warning(f"Hotel {hotel_name} (chiave: {hotel_key}) non trovato nei risultati di ricerca.")
+                    except Exception as e:
+                        st.warning(f"Errore nel recupero dei dati per {hotel_name}: {str(e)}")
+                
+                st.session_state.raw_hotel_data = all_raw_hotel_data
+                
+                merged_hotel_info = None
+                
+                if individual_hotel_data:
+                    individual_df = pd.concat(individual_hotel_data, ignore_index=True)
+                    if hotel_info_df is not None and not hotel_info_df.empty:
+                        hotel_info_df["our_hotel_name"] = hotel_info_df["hotel_key"].apply(
+                            lambda x: hotel_keys.get(x, "")
+                        )
+                        merged_hotel_info = pd.concat([individual_df, hotel_info_df], ignore_index=True)
+                        merged_hotel_info = merged_hotel_info.drop_duplicates(subset=["hotel_key"])
+                    else:
+                        merged_hotel_info = individual_df
+                elif hotel_info_df is not None:
+                    hotel_key_to_name = {v: k for k, v in hotel_keys.items()}
                     hotel_info_df["our_hotel_name"] = hotel_info_df["hotel_key"].apply(
                         lambda x: hotel_key_to_name.get(x, "")
                     )
-                    
-                    filtered_hotel_info = hotel_info_df[hotel_info_df["our_hotel_name"] != ""].copy()
-                    
+                    merged_hotel_info = hotel_info_df
+                
+                if merged_hotel_info is not None:
+                    filtered_hotel_info = merged_hotel_info[merged_hotel_info["our_hotel_name"] != ""].copy()
                     if not filtered_hotel_info.empty:
                         st.session_state.hotel_info = filtered_hotel_info
+                
             except Exception as e:
                 st.warning(f"Non è stato possibile recuperare le informazioni degli hotel: {str(e)}")
             
@@ -551,7 +601,7 @@ def rate_checker_app():
         }
         currency_symbol = currency_symbols.get(current_currency, current_currency)
         
-        tabs = st.tabs(["Confronto Tariffe", "Calendari Prezzi", "Analisi Comparativa", "Rating e Qualità"])
+        tabs = st.tabs(["Confronto Tariffe", "Calendari Prezzi", "Analisi Comparativa", "Rating e Qualità", "Debug"])
         
         with tabs[0]:
             st.header(f"Confronto tariffe tra OTA (Prezzi {price_description})")
@@ -916,9 +966,38 @@ def rate_checker_app():
             if "hotel_info" in st.session_state and not st.session_state.hotel_info.empty:
                 hotel_info_df = st.session_state.hotel_info
                 
-                has_rating = "rating" in hotel_info_df.columns and (hotel_info_df["rating"] > 0).any()
+                has_rating = "rating" in hotel_info_df.columns
                 
                 if has_rating:
+                    st.subheader("Confronto Rating e Prezzi")
+                    
+                    rating_comparison = []
+                    for hotel_name in hotel_keys.keys():
+                        hotel_rating_info = hotel_info_df[hotel_info_df["our_hotel_name"] == hotel_name]
+                        
+                        min_price = None
+                        if hotel_name in available_df["hotel"].unique():
+                            hotel_data = available_df[available_df["hotel"] == hotel_name]
+                            min_price = hotel_data[price_column].min()
+                        
+                        rating = "N/A"
+                        review_count = 0
+                        if not hotel_rating_info.empty:
+                            rating_value = hotel_rating_info.iloc[0]["rating"]
+                            review_count = hotel_rating_info.iloc[0]["review_count"]
+                            rating = f"{rating_value}/5"
+                        
+                        price_display = f"{currency_symbol}{min_price:.2f}" if min_price is not None else "Non disponibile"
+                        
+                        rating_comparison.append({
+                            "Hotel": hotel_name,
+                            "Rating": rating,
+                            "Prezzo minimo": price_display
+                        })
+                    
+                    comparison_df = pd.DataFrame(rating_comparison)
+                    st.dataframe(comparison_df, use_container_width=True)
+                    
                     rating_data = []
                     
                     for _, row in hotel_info_df.iterrows():
@@ -929,7 +1008,7 @@ def rate_checker_app():
                             hotel_data = available_df[available_df["hotel"] == hotel_name]
                             min_price = hotel_data[price_column].min()
                         
-                        if min_price is not None:
+                        if min_price is not None and row["rating"] > 0:
                             rating_data.append({
                                 "hotel": hotel_name,
                                 "rating": row["rating"],
@@ -1028,47 +1107,38 @@ def rate_checker_app():
                             )
                         
                         st.plotly_chart(scatter_fig, use_container_width=True)
-                        
-                        # Tabella confronto rating per tutti gli hotel (modificata come richiesto)
-                        st.subheader("Confronto Rating e Prezzi")
-                        
-                        # Creazione della tabella comparativa con tutti gli hotel disponibili
-                        rating_comparison = []
-                        for hotel_name in hotel_keys.keys():
-                            # Trova questo hotel nei dati di rating
-                            hotel_rating_info = hotel_info_df[hotel_info_df["our_hotel_name"] == hotel_name]
-                            
-                            # Trova il prezzo minimo se disponibile
-                            min_price = None
-                            if hotel_name in available_df["hotel"].unique():
-                                hotel_data = available_df[available_df["hotel"] == hotel_name]
-                                min_price = hotel_data[price_column].min()
-                            
-                            # Prepara i dati per la tabella
-                            rating = "N/A"
-                            review_count = 0
-                            if not hotel_rating_info.empty:
-                                rating_value = hotel_rating_info.iloc[0]["rating"]
-                                review_count = hotel_rating_info.iloc[0]["review_count"]
-                                rating = f"{rating_value}/5"
-                            
-                            price_display = f"{currency_symbol}{min_price:.2f}" if min_price is not None else "Non disponibile"
-                            
-                            rating_comparison.append({
-                                "Hotel": hotel_name,
-                                "Rating": rating,
-                                "Prezzo minimo": price_display
-                            })
-                        
-                        # Crea e mostra la tabella di confronto rating
-                        comparison_df = pd.DataFrame(rating_comparison)
-                        st.dataframe(comparison_df, use_container_width=True)
                     else:
                         st.warning("Non è stato possibile abbinare i dati di rating con i prezzi degli hotel.")
                 else:
                     st.warning("Nessun dato di rating disponibile per gli hotel selezionati.")
             else:
                 st.warning("Nessun dato di rating disponibile. Effettua una ricerca tariffe per visualizzare i rating.")
+        
+        with tabs[4]:
+            st.header("Debug e Informazioni Tecniche")
+            
+            with st.expander("Dati delle chiamate API"):
+                if "raw_hotel_data" in st.session_state:
+                    raw_data = st.session_state.raw_hotel_data
+                    
+                    st.subheader("Dati grezzi ricevuti dalle API")
+                    
+                    for key, value in raw_data.items():
+                        st.markdown(f"**{key}**")
+                        try:
+                            data_df = pd.DataFrame.from_dict(value)
+                            st.dataframe(data_df)
+                        except Exception as e:
+                            st.write(f"Errore nella visualizzazione dei dati: {str(e)}")
+                
+                if "hotel_info" in st.session_state:
+                    st.subheader("Dati hotel elaborati")
+                    st.dataframe(st.session_state.hotel_info)
+            
+            with st.expander("Chiavi hotel configurate"):
+                st.write("Hotel configurati nell'applicazione:")
+                for hotel_name, hotel_key in hotel_keys.items():
+                    st.write(f"- **{hotel_name}**: `{hotel_key}`")
     else:
         st.info("Clicca su 'Cerca tariffe' per recuperare i dati tariffari")
     
@@ -1093,11 +1163,10 @@ def rate_checker_app():
         2. Osserva l'URL, che sarà simile a: `https://www.tripadvisor.it/Hotel_Review-g1234567-d12345678-Reviews-Hotel_Name.html`
         3. La chiave è la parte `g1234567-d12345678`
         
-        Le chiavi sono universali e funzionano sia con TripAdvisor.it che con TripAdvisor.com.
         """)
     
     st.sidebar.markdown("---")
-    st.sidebar.info("Versione 0.4.3 - Developed by Alessandro Merella with Xotelo API")
+    st.sidebar.info("Versione 0.4.4 - Developed by Alessandro Merella with Xotelo API")
 
 if __name__ == "__main__":
     rate_checker_app()
