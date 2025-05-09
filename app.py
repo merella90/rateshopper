@@ -59,6 +59,65 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# CSS per migliorare i bottoni nella sidebar
+st.markdown(
+    """
+    <style>
+    /* Stile bottone primario (es. "Cerca tariffe") */
+    [data-testid="stSidebar"] button[kind="primary"] {
+        background-color: #f5f5f5 !important;
+        color: #0a5c60 !important;
+        border-radius: 6px !important;
+        font-weight: 600 !important;
+        padding: 0.5rem 1rem !important;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1) !important;
+        transition: all 0.2s !important;
+        border: none !important;
+        width: 100% !important;
+        margin: 8px 0 !important;
+    }
+    
+    [data-testid="stSidebar"] button[kind="primary"]:hover {
+        background-color: white !important;
+        box-shadow: 0 3px 8px rgba(0,0,0,0.2) !important;
+        transform: translateY(-1px) !important;
+    }
+    
+    /* Stile bottone secondario (es. "Cancella dati salvati") */
+    [data-testid="stSidebar"] button[kind="secondary"] {
+        background-color: transparent !important;
+        color: white !important;
+        border: 1px solid rgba(255,255,255,0.6) !important;
+        border-radius: 6px !important;
+        font-weight: 400 !important;
+        padding: 0.4rem 0.8rem !important;
+        transition: all 0.2s !important;
+        width: 100% !important;
+        margin: 5px 0 !important;
+    }
+    
+    [data-testid="stSidebar"] button[kind="secondary"]:hover {
+        background-color: rgba(255,255,255,0.1) !important;
+        border-color: white !important;
+    }
+    
+    /* Stile bottoni di incremento/decremento nei number input */
+    [data-testid="stSidebar"] [data-testid="stNumberInput"] button {
+        background-color: #0a5c60 !important; 
+        color: white !important;
+        border: none !important;
+        border-radius: 4px !important;
+        font-weight: bold !important;
+    }
+    
+    [data-testid="stSidebar"] [data-testid="stNumberInput"] button:hover {
+        background-color: #084548 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 class XoteloAPI:
     def __init__(self):
         self.base_url = "https://data.xotelo.com/api"
