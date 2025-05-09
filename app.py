@@ -14,120 +14,51 @@ st.set_page_config(
     layout="wide"
 )
 
-# CSS migliorato per una sidebar professionale
+# CSS semplice e pulito che mantiene il tema originale
 st.markdown(
     """
     <style>
-    /* Colori professionali */
+    /* Colore base verde acqua originale */
     [data-testid="stSidebar"] {
-        background-color: #2c3e50 !important; /* Blu scuro professionale */
-        color: #ecf0f1 !important;
-        padding: 1rem 0.5rem !important;
+        background-color: #0f7378 !important;
+        color: white !important;
     }
     
-    /* Titoli */
+    /* Uniformare tutti i componenti */
+    [data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"] {
+        background-color: #0a5c60 !important; /* Versione più scura del verde base */
+        color: white !important;
+        border: none !important;
+    }
+    
+    /* Radio e checkbox più coerenti */
+    [data-testid="stSidebar"] .stRadio input,
+    [data-testid="stSidebar"] .stCheckbox input {
+        accent-color: #f5f5f5 !important;
+    }
+    
+    /* Pulsante più chiaro e definito */
+    [data-testid="stSidebar"] button {
+        background-color: #f5f5f5 !important;
+        color: #0f7378 !important;
+        border: none !important;
+        font-weight: 500 !important;
+    }
+    
+    /* Mantenere tutto il testo bianco */
+    [data-testid="stSidebar"] p,
     [data-testid="stSidebar"] h1, 
     [data-testid="stSidebar"] h2, 
-    [data-testid="stSidebar"] h3, 
-    [data-testid="stSidebar"] h4 {
-        color: #ecf0f1 !important;
-        font-weight: 500 !important;
-        margin-top: 1.2rem !important;
-        margin-bottom: 0.8rem !important;
-        border-bottom: 1px solid rgba(236, 240, 241, 0.2) !important;
-        padding-bottom: 0.5rem !important;
-    }
-    
-    /* Maggiore spazio tra i gruppi */
-    [data-testid="stSidebar"] .block-container {
-        padding-top: 1rem !important;
-    }
-    
-    /* Multiselect più elegante */
-    [data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"] {
-        background-color: #34495e !important;
-        border: 1px solid #3498db !important;
-        color: #ecf0f1 !important;
-    }
-    
-    /* Bottoni più professionali */
-    [data-testid="stSidebar"] button, 
-    [data-testid="stSidebar"] [data-testid="baseButton-secondary"] {
-        background-color: #3498db !important;
+    [data-testid="stSidebar"] h3,
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] .stMarkdown {
         color: white !important;
-        border: none !important;
-        padding: 0.5rem 1rem !important;
-        border-radius: 4px !important;
-        font-weight: 500 !important;
-        transition: all 0.2s ease !important;
-    }
-    
-    [data-testid="stSidebar"] button:hover {
-        background-color: #2980b9 !important;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important;
-    }
-    
-    /* Input fields */
-    [data-testid="stSidebar"] input,
-    [data-testid="stSidebar"] [data-testid="stNumberInput"] input {
-        background-color: #34495e !important;
-        color: #ecf0f1 !important;
-        border: 1px solid #7f8c8d !important;
-        border-radius: 4px !important;
-    }
-    
-    /* Bottoni di increment/decrement nei numeri */
-    [data-testid="stSidebar"] [data-testid="stNumberInput"] button {
-        background-color: #3498db !important;
-        color: white !important;
-        border: none !important;
-    }
-    
-    /* Radio e checkbox */
-    [data-testid="stSidebar"] .stRadio input[type="radio"], 
-    [data-testid="stSidebar"] .stCheckbox input[type="checkbox"] {
-        accent-color: #3498db !important;
-    }
-    
-    /* Info, success e warning messages */
-    [data-testid="stSidebar"] .stAlert {
-        background-color: #34495e !important;
-        color: #ecf0f1 !important;
-        border-left: 4px solid #3498db !important;
-        padding: 0.8rem !important;
-        margin: 0.8rem 0 !important;
-    }
-    
-    [data-testid="stSidebar"] p, 
-    [data-testid="stSidebar"] .stMarkdown p, 
-    [data-testid="stSidebar"] label {
-        color: #ecf0f1 !important;
-    }
-    
-    /* Il pulsante rosso può rimanere ma con un rosso più adeguato */
-    [data-testid="stSidebar"] [aria-checked="true"] {
-        background-color: #e74c3c !important;
-    }
-    
-    /* Logo container */
-    .sidebar-logo {
-        background-color: #2c3e50 !important;
-        padding: 1.2rem 0 !important;
-        margin-bottom: 1rem !important;
-        text-align: center !important;
-        border-bottom: 1px solid rgba(236, 240, 241, 0.2) !important;
-    }
-    
-    /* Rendere gli elementi di data input più coerenti */
-    [data-testid="stSidebar"] .stDateInput input {
-        background-color: #34495e !important;
-        color: #ecf0f1 !important;
-        border: 1px solid #7f8c8d !important;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
+
 class XoteloAPI:
     def __init__(self):
         self.base_url = "https://data.xotelo.com/api"
