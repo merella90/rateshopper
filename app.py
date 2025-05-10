@@ -253,17 +253,18 @@ st.markdown(
     }
     
     /* Stile calendario */
-    .calendar-table {
+    .calendar-container table {
         width: 100%;
         border-collapse: collapse;
         margin-bottom: 20px;
     }
-    .calendar-table th, .calendar-table td {
+    .calendar-container th, 
+    .calendar-container td {
         border: 1px solid #ddd;
         padding: 8px;
         text-align: center;
     }
-    .calendar-table th {
+    .calendar-container th {
         background-color: #f2f2f2;
         font-weight: bold;
     }
@@ -274,6 +275,34 @@ st.markdown(
     }
     .price-level {
         font-size: 12px;
+    }
+    .price-economic {
+        background-color: #90EE90;
+    }
+    .price-medium {
+        background-color: #F0E68C;
+    }
+    .price-high {
+        background-color: #F08080;
+    }
+    .price-unavailable {
+        background-color: #D3D3D3;
+    }
+    .calendar-legend {
+        display: flex;
+        justify-content: center;
+        margin-top: 10px;
+        margin-bottom: 30px;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        margin-right: 20px;
+    }
+    .legend-color {
+        width: 20px;
+        height: 20px;
+        margin-right: 5px;
     }
     </style>
     """,
@@ -678,7 +707,7 @@ def rate_checker_app():
     )
     
     if st.sidebar.button("Cancella dati salvati", key="clear_data"):
-        keys_to_clear = ["rate_data", "heatmap_data", "hotel_info", "raw_hotel_data"]
+        keys_to_clear = ["rate_data", "heatmap_data", "hotel_info", "raw_hotel_data", "raw_api_responses"]
         for key in keys_to_clear:
             if key in st.session_state:
                 del st.session_state[key]
@@ -696,6 +725,10 @@ def rate_checker_app():
             all_data = []
             all_heatmap_data = []
             all_raw_hotel_data = {}
+            
+            # Inizializza il dizionario delle risposte API
+            if "raw_api_responses" not in st.session_state:
+                st.session_state.raw_api_responses = {}
             
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -718,9 +751,6 @@ def rate_checker_app():
                     )
                     
                     # Salva la risposta grezza per il debug
-                    if "raw_api_responses" not in st.session_state:
-                        st.session_state.raw_api_responses = {}
-                    
                     st.session_state.raw_api_responses[f"rates_{hotel}"] = response
                     
                     df = process_xotelo_response(
@@ -748,9 +778,6 @@ def rate_checker_app():
                     )
                     
                     # Salva la risposta grezza per il debug
-                    if "raw_api_responses" not in st.session_state:
-                        st.session_state.raw_api_responses = {}
-                    
                     st.session_state.raw_api_responses[f"heatmap_{hotel}"] = heatmap_response
                     
                     heatmap_data = process_heatmap_response(heatmap_response, hotel)
@@ -768,9 +795,6 @@ def rate_checker_app():
                 )
                 
                 # Salva la risposta grezza per il debug
-                if "raw_api_responses" not in st.session_state:
-                    st.session_state.raw_api_responses = {}
-                
                 st.session_state.raw_api_responses["hotel_list"] = hotel_list_response
                 
                 hotel_info_df = process_hotel_list_response(hotel_list_response)
@@ -1022,199 +1046,134 @@ def rate_checker_app():
                     hotel_heatmap = next((h for h in heatmap_data if h["hotel"] == selected_hotel_heatmap), None)
                     
                     if hotel_heatmap:
-                        today = datetime.now()
-                        
-                        start_date = today.replace(day=1)
-                        
                         st.subheader(f"Calendario Prezzi per {selected_hotel_heatmap}")
                         
                         df_heatmap = hotel_heatmap["data"]
                         df_heatmap["date_str"] = df_heatmap["date"].dt.strftime("%Y-%m-%d")
                         
-                        # Usiamo un approccio più affidabile per il rendering del calendario
+                        today = datetime.now()
+                        start_date = today.replace(day=1)
                         months_to_show = 2
-                        current_date = start_date
                         
+                        # Utilizziamo un approccio più semplice basato su DataFrame e tabelle
                         for month_idx in range(months_to_show):
-                            month_name = current_date.strftime("%B %Y")
-                            month_start = current_date.replace(day=1)
-                            
-                            if current_date.month == 12:
-                                month_end = current_date.replace(year=current_date.year + 1, month=1, day=1) - timedelta(days=1)
-                            else:
-                                month_end = current_date.replace(month=current_date.month + 1, day=1) - timedelta(days=1)
-                            
-                            # Creiamo il dataframe del calendario
-                            all_days = pd.date_range(start=month_start, end=month_end)
-                            calendar_df = pd.DataFrame({"date": all_days})
-                            calendar_df["day"] = calendar_df["date"].dt.day
-                            calendar_df["weekday"] = calendar_df["date"].dt.weekday
-                            calendar_df["date_str"] = calendar_df["date"].dt.strftime("%Y-%m-%d")
-                            
-                            # Aggiungiamo le informazioni sui livelli di prezzo
-                            calendar_df["price_level"] = "Non disponibile"
-                            calendar_df["level_value"] = 0
-                            
-                            # Mappiamo i dati dal dataframe heatmap
-                            for i, row in calendar_df.iterrows():
-                                matches = df_heatmap[df_heatmap["date_str"] == row["date_str"]]
-                                if not matches.empty:
-                                    calendar_df.at[i, "price_level"] = matches.iloc[0]["price_level"]
-                                    calendar_df.at[i, "level_value"] = matches.iloc[0]["level_value"]
-                            
-                            # Visualizziamo il mese
+                            month_name = start_date.strftime("%B %Y")
                             st.subheader(month_name)
                             
-                            # Creiamo una visualizzazione grafica del calendario utilizzando st.dataframe
-                            # Prepariamo una matrice 6x7 per il mese (6 settimane max, 7 giorni)
-                            calendar_matrix = []
-                            week = [""] * 7  # Inizializziamo con vuoti
-                            
-                            # Riempiamo la prima settimana con spazi vuoti fino al primo giorno del mese
-                            first_day_weekday = calendar_df.iloc[0]["weekday"]
-                            
-                            for day_data in calendar_df.itertuples():
-                                weekday = day_data.weekday
-                                
-                                # Se è lunedì e non è la prima settimana, aggiungiamo la settimana e ne iniziamo una nuova
-                                if weekday == 0 and any(day != "" for day in week):
-                                    calendar_matrix.append(week.copy())
-                                    week = [""] * 7
-                                
-                                # Formattazione del giorno
-                                day_str = str(day_data.day)
-                                price_level = day_data.price_level
-                                
-                                # Coloriamo il giorno in base al livello di prezzo
-                                if price_level == "Economico":
-                                    day_color = "#90EE90"  # Verde chiaro
-                                elif price_level == "Medio":
-                                    day_color = "#F0E68C"  # Giallo chiaro
-                                elif price_level == "Alto":
-                                    day_color = "#F08080"  # Rosso chiaro
-                                else:
-                                    day_color = "#D3D3D3"  # Grigio chiaro (non disponibile)
-                                
-                                # Aggiungiamo il giorno alla settimana
-                                week[weekday] = {
-                                    "day": day_str,
-                                    "color": day_color,
-                                    "label": price_level
-                                }
-                            
-                            # Aggiungiamo l'ultima settimana
-                            if any(day != "" for day in week):
-                                calendar_matrix.append(week)
-                            
-                            # Ora rendiamo tutto con HTML e CSS
-                            calendar_html = f"""
-                            <style>
-                                .calendar-table {{
-                                    width: 100%;
-                                    border-collapse: collapse;
-                                    margin-bottom: 20px;
-                                }}
-                                .calendar-table th, .calendar-table td {{
-                                    border: 1px solid #ddd;
-                                    padding: 8px;
-                                    text-align: center;
-                                }}
-                                .calendar-table th {{
-                                    background-color: #f2f2f2;
-                                    font-weight: bold;
-                                }}
-                                .calendar-day {{
-                                    font-weight: bold;
-                                    font-size: 16px;
-                                    margin-bottom: 4px;
-                                }}
-                                .price-level {{
-                                    font-size: 12px;
-                                }}
-                                .tooltip {{
-                                    position: relative;
-                                    display: inline-block;
-                                }}
-                                .tooltip .tooltiptext {{
-                                    visibility: hidden;
-                                    background-color: #555;
-                                    color: #fff;
-                                    text-align: center;
-                                    border-radius: 6px;
-                                    padding: 5px;
-                                    position: absolute;
-                                    z-index: 1;
-                                    bottom: 125%;
-                                    left: 50%;
-                                    margin-left: -60px;
-                                    opacity: 0;
-                                    transition: opacity 0.3s;
-                                }}
-                                .tooltip:hover .tooltiptext {{
-                                    visibility: visible;
-                                    opacity: 1;
-                                }}
-                            </style>
-                            <table class="calendar-table">
-                                <tr>
-                                    <th>Lun</th>
-                                    <th>Mar</th>
-                                    <th>Mer</th>
-                                    <th>Gio</th>
-                                    <th>Ven</th>
-                                    <th>Sab</th>
-                                    <th>Dom</th>
-                                </tr>
-                            """
-                            
-                            for week in calendar_matrix:
-                                calendar_html += "<tr>"
-                                for day in week:
-                                    if day == "":
-                                        calendar_html += "<td></td>"
-                                    else:
-                                        calendar_html += f"""
-                                        <td style="background-color: {day['color']};">
-                                            <div class="calendar-day">{day['day']}</div>
-                                            <div class="price-level">{day['label']}</div>
-                                        </td>
-                                        """
-                                calendar_html += "</tr>"
-                            
-                            calendar_html += "</table>"
-                            
-                            # Rendiamo il calendario HTML
-                            st.markdown(calendar_html, unsafe_allow_html=True)
-                            
-                            # Aggiungiamo la legenda
-                            legend_html = """
-                            <div style="display: flex; margin-top: 10px; justify-content: center; margin-bottom: 30px;">
-                                <div style="display: flex; align-items: center; margin-right: 20px;">
-                                    <div style="width: 20px; height: 20px; background-color: #90EE90; margin-right: 5px;"></div>
-                                    <span>Economico</span>
-                                </div>
-                                <div style="display: flex; align-items: center; margin-right: 20px;">
-                                    <div style="width: 20px; height: 20px; background-color: #F0E68C; margin-right: 5px;"></div>
-                                    <span>Medio</span>
-                                </div>
-                                <div style="display: flex; align-items: center; margin-right: 20px;">
-                                    <div style="width: 20px; height: 20px; background-color: #F08080; margin-right: 5px;"></div>
-                                    <span>Alto</span>
-                                </div>
-                                <div style="display: flex; align-items: center;">
-                                    <div style="width: 20px; height: 20px; background-color: #D3D3D3; margin-right: 5px;"></div>
-                                    <span>Non disponibile</span>
-                                </div>
-                            </div>
-                            """
-                            
-                            st.markdown(legend_html, unsafe_allow_html=True)
-                            
-                            # Prepariamo il mese successivo
-                            if current_date.month == 12:
-                                current_date = current_date.replace(year=current_date.year + 1, month=1)
+                            month_start = start_date.replace(day=1)
+                            if start_date.month == 12:
+                                month_end = start_date.replace(year=start_date.year + 1, month=1, day=1) - timedelta(days=1)
                             else:
-                                current_date = current_date.replace(month=current_date.month + 1)
+                                month_end = start_date.replace(month=start_date.month + 1, day=1) - timedelta(days=1)
+                            
+                            # Creiamo dataframe con giorni del mese
+                            calendar_days = []
+                            for d in range((month_end - month_start).days + 1):
+                                current_day = month_start + timedelta(days=d)
+                                day_str = current_day.strftime("%Y-%m-%d")
+                                weekday = current_day.weekday()
+                                
+                                price_level = "Non disponibile"
+                                day_matches = df_heatmap[df_heatmap["date_str"] == day_str]
+                                if not day_matches.empty:
+                                    price_level = day_matches.iloc[0]["price_level"]
+                                
+                                calendar_days.append({
+                                    "date": current_day,
+                                    "day": current_day.day,
+                                    "weekday": weekday,
+                                    "price_level": price_level
+                                })
+                            
+                            calendar_df = pd.DataFrame(calendar_days)
+                            
+                            # Creare una matrice per il calendario
+                            weeks = []
+                            week_start = 0
+                            
+                            # Riempiamo con giorni vuoti fino al primo giorno del mese
+                            first_day = calendar_df.iloc[0]
+                            first_week = [None] * 7
+                            for i in range(first_day["weekday"]):
+                                first_week[i] = None
+                            
+                            for i, day in enumerate(calendar_df.itertuples()):
+                                weekday = day.weekday
+                                
+                                # Se siamo all'inizio e dobbiamo usare la prima settimana
+                                if i < 7 - first_day["weekday"]:
+                                    first_week[weekday] = {
+                                        "day": day.day,
+                                        "price_level": day.price_level
+                                    }
+                                    if weekday == 6:
+                                        weeks.append(first_week)
+                                else:
+                                    # Se è lunedì, iniziamo una nuova settimana
+                                    if weekday == 0:
+                                        current_week = [None] * 7
+                                        weeks.append(current_week)
+                                    
+                                    # Aggiungiamo il giorno alla settimana corrente
+                                    try:
+                                        weeks[-1][weekday] = {
+                                            "day": day.day,
+                                            "price_level": day.price_level
+                                        }
+                                    except IndexError:
+                                        # Se non abbiamo ancora settimane, ne creiamo una
+                                        current_week = [None] * 7
+                                        current_week[weekday] = {
+                                            "day": day.day,
+                                            "price_level": day.price_level
+                                        }
+                                        weeks.append(current_week)
+                            
+                            # Creiamo una tabella per visualizzare il calendario
+                            header = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"]
+                            rows = []
+                            
+                            for week in weeks:
+                                row = []
+                                for day in week:
+                                    if day is None:
+                                        row.append("")
+                                    else:
+                                        # Definiamo il colore in base al livello di prezzo
+                                        if day["price_level"] == "Economico":
+                                            color = "#90EE90"  # Verde chiaro
+                                        elif day["price_level"] == "Medio":
+                                            color = "#F0E68C"  # Giallo chiaro
+                                        elif day["price_level"] == "Alto":
+                                            color = "#F08080"  # Rosso chiaro
+                                        else:
+                                            color = "#D3D3D3"  # Grigio chiaro (non disponibile)
+                                        
+                                        row.append(f"{day['day']}\n{day['price_level']}")
+                                rows.append(row)
+                            
+                            # Creiamo il DataFrame per visualizzare il calendario
+                            calendar_display = pd.DataFrame(rows, columns=header)
+                            st.dataframe(calendar_display, use_container_width=True)
+                            
+                            # Legenda
+                            legend_cols = st.columns(4)
+                            with legend_cols[0]:
+                                st.markdown('<div style="display: flex; align-items: center;"><div style="width: 20px; height: 20px; background-color: #90EE90; margin-right: 5px;"></div><span>Economico</span></div>', unsafe_allow_html=True)
+                            with legend_cols[1]:
+                                st.markdown('<div style="display: flex; align-items: center;"><div style="width: 20px; height: 20px; background-color: #F0E68C; margin-right: 5px;"></div><span>Medio</span></div>', unsafe_allow_html=True)
+                            with legend_cols[2]:
+                                st.markdown('<div style="display: flex; align-items: center;"><div style="width: 20px; height: 20px; background-color: #F08080; margin-right: 5px;"></div><span>Alto</span></div>', unsafe_allow_html=True)
+                            with legend_cols[3]:
+                                st.markdown('<div style="display: flex; align-items: center;"><div style="width: 20px; height: 20px; background-color: #D3D3D3; margin-right: 5px;"></div><span>Non disponibile</span></div>', unsafe_allow_html=True)
+                            
+                            # Prossimo mese
+                            if start_date.month == 12:
+                                start_date = start_date.replace(year=start_date.year + 1, month=1)
+                            else:
+                                start_date = start_date.replace(month=start_date.month + 1)
+                            
+                            st.write("")  # Aggiungi spazio tra i mesi
                 else:
                     st.warning("Nessun dato di calendario prezzi disponibile per gli hotel selezionati.")
             else:
@@ -1479,27 +1438,48 @@ def rate_checker_app():
         with tabs[4]:
             st.header("Debug e Informazioni Tecniche")
             
-            with st.expander("Dati grezzi delle chiamate API Xotelo"):
+            st.subheader("Dati grezzi delle chiamate API Xotelo")
+            
+            # Dati Rates
+            with st.expander("Risposte API Rates"):
                 if "raw_api_responses" in st.session_state:
-                    st.subheader("Risposte API grezze")
+                    api_responses = st.session_state.raw_api_responses
+                    rate_keys = [k for k in api_responses.keys() if k.startswith("rates_")]
                     
-                    for key, value in st.session_state.raw_api_responses.items():
-                        with st.expander(f"Risposta API: {key}"):
-                            st.json(value)
-                
-                if "raw_hotel_data" in st.session_state:
-                    raw_data = st.session_state.raw_hotel_data
-                    
-                    st.subheader("Dati grezzi ricevuti dalle API")
-                    
-                    for key, value in raw_data.items():
+                    for key in rate_keys:
                         st.markdown(f"**{key}**")
                         try:
-                            data_df = pd.DataFrame.from_dict(value)
-                            st.dataframe(data_df)
-                        except Exception as e:
-                            st.write(f"Errore nella visualizzazione dei dati: {str(e)}")
+                            st.json(api_responses[key])
+                        except:
+                            st.write("Errore nella visualizzazione JSON")
             
+            # Dati Heatmap
+            with st.expander("Risposte API Heatmap"):
+                if "raw_api_responses" in st.session_state:
+                    api_responses = st.session_state.raw_api_responses
+                    heatmap_keys = [k for k in api_responses.keys() if k.startswith("heatmap_")]
+                    
+                    for key in heatmap_keys:
+                        st.markdown(f"**{key}**")
+                        try:
+                            st.json(api_responses[key])
+                        except:
+                            st.write("Errore nella visualizzazione JSON")
+            
+            # Dati Hotel List
+            with st.expander("Risposte API Hotel List"):
+                if "raw_api_responses" in st.session_state:
+                    api_responses = st.session_state.raw_api_responses
+                    hotel_list_keys = [k for k in api_responses.keys() if k.startswith("hotel_list")]
+                    
+                    for key in hotel_list_keys:
+                        st.markdown(f"**{key}**")
+                        try:
+                            st.json(api_responses[key])
+                        except:
+                            st.write("Errore nella visualizzazione JSON")
+            
+            # Analisi OTA
             with st.expander("Analisi OTA"):
                 if "rate_data" in st.session_state:
                     df = st.session_state.rate_data
@@ -1542,6 +1522,7 @@ def rate_checker_app():
                     else:
                         st.warning("Nessun dato disponibile per l'analisi OTA")
             
+            # Dettagli API
             with st.expander("Dettagli delle richieste API"):
                 st.markdown("### Parametri utilizzati nelle richieste API")
                 
@@ -1569,9 +1550,10 @@ def rate_checker_app():
                     st.write(f"  - Hotel ID: `{hotel_id}`")
                     st.write(f"  - TripAdvisor URL: https://www.tripadvisor.com/Hotel_Review-{hotel_key}")
             
-            if "hotel_info" in st.session_state:
-                st.subheader("Dati hotel elaborati")
-                st.dataframe(st.session_state.hotel_info)
+            # Hotel info
+            with st.expander("Dati hotel elaborati"):
+                if "hotel_info" in st.session_state:
+                    st.dataframe(st.session_state.hotel_info)
     else:
         st.info("Clicca su 'Cerca tariffe' per recuperare i dati tariffari")
     
@@ -1599,7 +1581,7 @@ def rate_checker_app():
         """)
     
     st.sidebar.markdown("---")
-    st.sidebar.info("Versione 0.5.2 - Developed by Alessandro Merella with Xotelo API")
+    st.sidebar.info("Versione 0.5.3 - Developed by Alessandro Merella with Xotelo API")
 
 if __name__ == "__main__":
     rate_checker_app()
