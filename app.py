@@ -402,6 +402,19 @@ def get_nome_mese(data):
     """Restituisce il nome del mese in italiano"""
     return f"{MESI_IT[data.month]} {data.year}"
 
+# Correzioni arrotondamento API per OTA (€/notte)
+# L'API Xotelo restituisce rate e tax come interi arrotondati per difetto.
+# Queste correzioni compensano la differenza rispetto ai prezzi reali su TripAdvisor.
+OTA_ROUNDING_CORRECTIONS = {
+    "BookingCom": 2,      # Booking.com: +2€/notte
+    "WIHP": 1,            # Official Site (WIHP): +1€/notte
+    "Vio": 1,             # Vio.com: +1€/notte
+    "Expedia": 1,         # Expedia: +1€/notte
+    "HotelsCom2": 1,      # Hotels.com: +1€/notte
+    "Agoda": 1,           # Agoda: +1€/notte
+    "Destinia": 1,        # Destinia: +1€/notte
+}
+
 def process_xotelo_response(response, hotel_name, num_nights=1, adults=2, children_count=0, rooms=1, currency="EUR"):
     if response.get("error") is not None or response.get("result") is None:
         return pd.DataFrame([{
@@ -409,9 +422,12 @@ def process_xotelo_response(response, hotel_name, num_nights=1, adults=2, childr
             "ota": "N/A",
             "ota_code": "N/A",
             "price": 0,
+            "price_raw": 0,
             "price_net": 0,
             "tax": 0,
+            "rounding_correction": 0,
             "price_total": 0,
+            "price_total_raw": 0,
             "currency": currency,
             "check_in": "",
             "check_out": "",
@@ -433,9 +449,12 @@ def process_xotelo_response(response, hotel_name, num_nights=1, adults=2, childr
             "ota": "N/A",
             "ota_code": "N/A",
             "price": 0,
+            "price_raw": 0,
             "price_net": 0,
             "tax": 0,
+            "rounding_correction": 0,
             "price_total": 0,
+            "price_total_raw": 0,
             "currency": currency,
             "check_in": check_in,
             "check_out": check_out,
@@ -453,17 +472,22 @@ def process_xotelo_response(response, hotel_name, num_nights=1, adults=2, childr
         if "traveloka" not in rate.get("name", "").lower():  # Escludiamo Traveloka
             rate_net = rate.get("rate", 0)
             tax = rate.get("tax", 0)
-            price_per_night = rate_net + tax  # FIX: prezzo comprensivo di tasse come su TripAdvisor
-            total_price = price_per_night * num_nights
+            ota_code = rate.get("code", "")
+            rounding_correction = OTA_ROUNDING_CORRECTIONS.get(ota_code, 0)
+            price_per_night_raw = rate_net + tax  # Prezzo API grezzo (rate + tax)
+            price_per_night_corrected = price_per_night_raw + rounding_correction  # Prezzo corretto
             
             data.append({
                 "hotel": hotel_name,
                 "ota": rate.get("name", ""),
-                "ota_code": rate.get("code", ""),
-                "price": price_per_night,
+                "ota_code": ota_code,
+                "price_raw": price_per_night_raw,
+                "price": price_per_night_corrected,
                 "price_net": rate_net,
                 "tax": tax,
-                "price_total": total_price,
+                "rounding_correction": rounding_correction,
+                "price_total_raw": price_per_night_raw * num_nights,
+                "price_total": price_per_night_corrected * num_nights,
                 "currency": currency,
                 "check_in": check_in,
                 "check_out": check_out,
@@ -638,6 +662,18 @@ def normalize_dataframe(df, num_nights):
     if "rooms" not in columns:
         normalized_df["rooms"] = 1
     
+    # Gestione colonne raw per correzione arrotondamenti
+    if "price_raw" not in columns:
+        normalized_df["price_raw"] = normalized_df["price"]
+    if "price_total_raw" not in columns:
+        normalized_df["price_total_raw"] = normalized_df["price_raw"] * num_nights
+    if "rounding_correction" not in columns:
+        normalized_df["rounding_correction"] = 0
+    if "price_net" not in columns:
+        normalized_df["price_net"] = normalized_df["price_raw"]
+    if "tax" not in columns:
+        normalized_df["tax"] = 0
+    
     return normalized_df
 
 def rate_checker_app():
@@ -741,6 +777,20 @@ def rate_checker_app():
         help="Mostra la suddivisione tra tariffa netta e tasse per ogni OTA"
     )
     
+    apply_rounding = st.sidebar.checkbox(
+        "Applica correzione arrotondamenti",
+        value=True,
+        help="Compensa gli arrotondamenti per difetto dell'API Xotelo (es. +2€ Booking, +1€ Sito Ufficiale)"
+    )
+    
+    show_raw_prices = False
+    if apply_rounding:
+        show_raw_prices = st.sidebar.checkbox(
+            "Mostra anche prezzi API grezzi",
+            value=False,
+            help="Mostra i prezzi originali dall'API senza correzione, per confronto"
+        )
+    
     if st.sidebar.button("Cancella dati salvati", key="clear_data"):
         keys_to_clear = ["rate_data", "heatmap_data", "hotel_info", "raw_hotel_data", "raw_api_responses"]
         for key in keys_to_clear:
@@ -750,7 +800,14 @@ def rate_checker_app():
         st.rerun()
     
     use_total_price = (price_view == "Totali")
-    price_column = "price_total" if use_total_price else "price"
+    if apply_rounding:
+        price_column = "price_total" if use_total_price else "price"
+        price_per_night_col = "price"
+        price_total_col = "price_total"
+    else:
+        price_column = "price_total_raw" if use_total_price else "price_raw"
+        price_per_night_col = "price_raw"
+        price_total_col = "price_total_raw"
     price_description = f"{'totali per ' + str(num_nights) + ' notti' if use_total_price else 'per notte'}"
     
     if st.sidebar.button("Cerca tariffe", key="search_rates"):
@@ -972,6 +1029,8 @@ def rate_checker_app():
         
         if "num_nights" in st.session_state and st.session_state.num_nights != num_nights:
             df["price_total"] = df["price"] * num_nights
+            if "price_raw" in df.columns:
+                df["price_total_raw"] = df["price_raw"] * num_nights
             st.session_state.num_nights = num_nights
             st.session_state.rate_data = df
             st.info(f"Prezzi totali aggiornati per {num_nights} notti")
@@ -1032,33 +1091,54 @@ def rate_checker_app():
                     
                     col1, col2 = st.columns(2)
                     with col1:
-                        min_price_night = hotel_df["price"].min()
-                        min_ota_night = hotel_df.loc[hotel_df["price"].idxmin(), "ota"]
+                        min_price_night = hotel_df[price_per_night_col].min()
+                        min_ota_night = hotel_df.loc[hotel_df[price_per_night_col].idxmin(), "ota"]
                         st.info(f"Prezzo minimo per notte: {currency_symbol}{min_price_night:.2f} via {min_ota_night}")
                     
                     with col2:
-                        min_price_total = hotel_df["price_total"].min()
-                        min_ota_total = hotel_df.loc[hotel_df["price_total"].idxmin(), "ota"]
+                        min_price_total = hotel_df[price_total_col].min()
+                        min_ota_total = hotel_df.loc[hotel_df[price_total_col].idxmin(), "ota"]
                         st.info(f"Prezzo totale per {num_nights} notti: {currency_symbol}{min_price_total:.2f} via {min_ota_total}")
                     
                     st.subheader("Dettaglio tariffe per tutte le OTA")
+                    
+                    # Costruzione dinamica delle colonne in base ai flag
+                    cols = ["ota"]
+                    col_names = ["OTA"]
+                    
                     if show_tax_detail:
-                        columns_to_show = ["ota", "price_net", "tax", "price", "price_total"]
-                        display_df = hotel_df[columns_to_show].sort_values(by=price_column).copy()
-                        display_df["price_net"] = display_df["price_net"].apply(lambda x: f"{currency_symbol}{x:.2f}")
-                        display_df["tax"] = display_df["tax"].apply(lambda x: f"{currency_symbol}{x:.2f}")
-                        display_df["price"] = display_df["price"].apply(lambda x: f"{currency_symbol}{x:.2f}")
-                        display_df["price_total"] = display_df["price_total"].apply(lambda x: f"{currency_symbol}{x:.2f}")
-                        display_df.columns = ["OTA", f"Tariffa netta ({currency_symbol})", f"Tasse ({currency_symbol})", f"Prezzo per notte ({currency_symbol})", f"Prezzo totale {num_nights} notti ({currency_symbol})"]
+                        cols += ["price_net", "tax"]
+                        col_names += [f"Tariffa netta ({currency_symbol})", f"Tasse ({currency_symbol})"]
+                    
+                    if apply_rounding and show_raw_prices:
+                        cols += ["price_raw", "rounding_correction", price_per_night_col, price_total_col]
+                        col_names += [
+                            f"Prezzo API ({currency_symbol})",
+                            f"Correz. ({currency_symbol})",
+                            f"Prezzo/notte corretto ({currency_symbol})",
+                            f"Totale {num_nights} notti ({currency_symbol})"
+                        ]
                     else:
-                        columns_to_show = ["ota", "price", "price_total"]
-                        display_df = hotel_df[columns_to_show].sort_values(by=price_column).copy()
-                        display_df["price"] = display_df["price"].apply(lambda x: f"{currency_symbol}{x:.2f}")
-                        display_df["price_total"] = display_df["price_total"].apply(lambda x: f"{currency_symbol}{x:.2f}")
-                        display_df.columns = ["OTA", f"Prezzo per notte ({currency_symbol})", f"Prezzo totale {num_nights} notti ({currency_symbol})"]
+                        cols += [price_per_night_col, price_total_col]
+                        col_names += [
+                            f"Prezzo per notte ({currency_symbol})",
+                            f"Totale {num_nights} notti ({currency_symbol})"
+                        ]
+                    
+                    display_df = hotel_df[cols].sort_values(by=price_column).copy()
+                    
+                    # Formatta tutte le colonne numeriche
+                    for c in cols:
+                        if c != "ota":
+                            display_df[c] = display_df[c].apply(lambda x: f"{currency_symbol}{x:.2f}")
+                    
+                    display_df.columns = col_names
                     st.dataframe(display_df, use_container_width=True)
                     
-                    st.caption("⚠️ I prezzi possono differire di ±2€ rispetto a TripAdvisor per arrotondamenti dell'API Xotelo.")
+                    if apply_rounding:
+                        st.caption("✅ Prezzi con correzione arrotondamenti API applicata.")
+                    else:
+                        st.caption("⚠️ Prezzi grezzi dall'API — possono differire di ±2€ rispetto a TripAdvisor.")
                 
                 st.subheader("Tutte le OTA disponibili per hotel")
                 available_df = df[df["available"]]
@@ -1569,6 +1649,16 @@ def rate_checker_app():
             with st.expander("Dati hotel elaborati"):
                 if "hotel_info" in st.session_state:
                     st.dataframe(st.session_state.hotel_info)
+            
+            # Correzioni arrotondamento
+            with st.expander("Correzioni arrotondamento OTA"):
+                st.markdown("### Valori di correzione configurati (€/notte)")
+                st.markdown("Questi valori vengono sommati ai prezzi API per compensare gli arrotondamenti per difetto di Xotelo.")
+                corrections_data = []
+                for ota_code, correction in OTA_ROUNDING_CORRECTIONS.items():
+                    corrections_data.append({"Codice OTA": ota_code, "Correzione (€/notte)": f"+{correction}€"})
+                st.dataframe(pd.DataFrame(corrections_data), use_container_width=True)
+                st.info("Per modificare i valori di correzione, editare il dizionario OTA_ROUNDING_CORRECTIONS nel codice sorgente.")
     else:
         st.info("Clicca su 'Cerca tariffe' per recuperare i dati tariffari")
     
@@ -1596,7 +1686,7 @@ def rate_checker_app():
         """)
     
     st.sidebar.markdown("---")
-    st.sidebar.info("Versione 0.5.5 - Developed by Alessandro Merella with Xotelo API")
+    st.sidebar.info("Versione 0.6.0 - Developed by Alessandro Merella with Xotelo API")
 
 if __name__ == "__main__":
     rate_checker_app()
