@@ -7,6 +7,16 @@ from datetime import datetime, timedelta
 import requests
 import json
 import base64
+import locale
+
+# Imposta locale italiana per nomi mesi e giorni
+try:
+    locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
+except:
+    try:
+        locale.setlocale(locale.LC_TIME, 'it_IT')
+    except:
+        pass  # Fallback alla locale di default
 
 st.set_page_config(
     page_title="Rate Checker VOI Alimini (BETA)",
@@ -381,6 +391,17 @@ hotel_keys = {
 
 location_key = "g652004"
 
+# Nomi mesi in italiano (fallback se locale non disponibile)
+MESI_IT = {
+    1: "Gennaio", 2: "Febbraio", 3: "Marzo", 4: "Aprile",
+    5: "Maggio", 6: "Giugno", 7: "Luglio", 8: "Agosto",
+    9: "Settembre", 10: "Ottobre", 11: "Novembre", 12: "Dicembre"
+}
+
+def get_nome_mese(data):
+    """Restituisce il nome del mese in italiano"""
+    return f"{MESI_IT[data.month]} {data.year}"
+
 def process_xotelo_response(response, hotel_name, num_nights=1, adults=2, children_count=0, rooms=1, currency="EUR"):
     if response.get("error") is not None or response.get("result") is None:
         return pd.DataFrame([{
@@ -714,6 +735,12 @@ def rate_checker_app():
         help="Scegli se visualizzare i prezzi totali per tutto il soggiorno o i prezzi per notte"
     )
     
+    show_tax_detail = st.sidebar.checkbox(
+        "Mostra dettaglio tasse",
+        value=False,
+        help="Mostra la suddivisione tra tariffa netta e tasse per ogni OTA"
+    )
+    
     if st.sidebar.button("Cancella dati salvati", key="clear_data"):
         keys_to_clear = ["rate_data", "heatmap_data", "hotel_info", "raw_hotel_data", "raw_api_responses"]
         for key in keys_to_clear:
@@ -1015,13 +1042,20 @@ def rate_checker_app():
                         st.info(f"Prezzo totale per {num_nights} notti: {currency_symbol}{min_price_total:.2f} via {min_ota_total}")
                     
                     st.subheader("Dettaglio tariffe per tutte le OTA")
-                    columns_to_show = ["ota", "price_net", "tax", "price", "price_total"]
-                    display_df = hotel_df[columns_to_show].sort_values(by=price_column).copy()
-                    display_df["price_net"] = display_df["price_net"].apply(lambda x: f"{currency_symbol}{x:.2f}")
-                    display_df["tax"] = display_df["tax"].apply(lambda x: f"{currency_symbol}{x:.2f}")
-                    display_df["price"] = display_df["price"].apply(lambda x: f"{currency_symbol}{x:.2f}")
-                    display_df["price_total"] = display_df["price_total"].apply(lambda x: f"{currency_symbol}{x:.2f}")
-                    display_df.columns = ["OTA", f"Tariffa netta ({currency_symbol})", f"Tasse ({currency_symbol})", f"Prezzo per notte ({currency_symbol})", f"Prezzo totale {num_nights} notti ({currency_symbol})"]
+                    if show_tax_detail:
+                        columns_to_show = ["ota", "price_net", "tax", "price", "price_total"]
+                        display_df = hotel_df[columns_to_show].sort_values(by=price_column).copy()
+                        display_df["price_net"] = display_df["price_net"].apply(lambda x: f"{currency_symbol}{x:.2f}")
+                        display_df["tax"] = display_df["tax"].apply(lambda x: f"{currency_symbol}{x:.2f}")
+                        display_df["price"] = display_df["price"].apply(lambda x: f"{currency_symbol}{x:.2f}")
+                        display_df["price_total"] = display_df["price_total"].apply(lambda x: f"{currency_symbol}{x:.2f}")
+                        display_df.columns = ["OTA", f"Tariffa netta ({currency_symbol})", f"Tasse ({currency_symbol})", f"Prezzo per notte ({currency_symbol})", f"Prezzo totale {num_nights} notti ({currency_symbol})"]
+                    else:
+                        columns_to_show = ["ota", "price", "price_total"]
+                        display_df = hotel_df[columns_to_show].sort_values(by=price_column).copy()
+                        display_df["price"] = display_df["price"].apply(lambda x: f"{currency_symbol}{x:.2f}")
+                        display_df["price_total"] = display_df["price_total"].apply(lambda x: f"{currency_symbol}{x:.2f}")
+                        display_df.columns = ["OTA", f"Prezzo per notte ({currency_symbol})", f"Prezzo totale {num_nights} notti ({currency_symbol})"]
                     st.dataframe(display_df, use_container_width=True)
                     
                     st.caption("⚠️ I prezzi possono differire di ±2€ rispetto a TripAdvisor per arrotondamenti dell'API Xotelo.")
@@ -1068,7 +1102,7 @@ def rate_checker_app():
                         months_to_show = 2
                         
                         for month_idx in range(months_to_show):
-                            month_name = start_date.strftime("%B %Y")
+                            month_name = get_nome_mese(start_date)
                             st.subheader(month_name)
                             
                             month_start = start_date.replace(day=1)
@@ -1562,7 +1596,7 @@ def rate_checker_app():
         """)
     
     st.sidebar.markdown("---")
-    st.sidebar.info("Versione 0.5.4 - Developed by Alessandro Merella with Xotelo API")
+    st.sidebar.info("Versione 0.5.5 - Developed by Alessandro Merella with Xotelo API")
 
 if __name__ == "__main__":
     rate_checker_app()
