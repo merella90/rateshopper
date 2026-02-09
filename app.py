@@ -388,6 +388,8 @@ def process_xotelo_response(response, hotel_name, num_nights=1, adults=2, childr
             "ota": "N/A",
             "ota_code": "N/A",
             "price": 0,
+            "price_net": 0,
+            "tax": 0,
             "price_total": 0,
             "currency": currency,
             "check_in": "",
@@ -410,6 +412,8 @@ def process_xotelo_response(response, hotel_name, num_nights=1, adults=2, childr
             "ota": "N/A",
             "ota_code": "N/A",
             "price": 0,
+            "price_net": 0,
+            "tax": 0,
             "price_total": 0,
             "currency": currency,
             "check_in": check_in,
@@ -426,7 +430,9 @@ def process_xotelo_response(response, hotel_name, num_nights=1, adults=2, childr
     # Filtriamo Traveloka dai risultati
     for rate in rates:
         if "traveloka" not in rate.get("name", "").lower():  # Escludiamo Traveloka
-            price_per_night = rate.get("rate", 0)
+            rate_net = rate.get("rate", 0)
+            tax = rate.get("tax", 0)
+            price_per_night = rate_net + tax  # FIX: prezzo comprensivo di tasse come su TripAdvisor
             total_price = price_per_night * num_nights
             
             data.append({
@@ -434,6 +440,8 @@ def process_xotelo_response(response, hotel_name, num_nights=1, adults=2, childr
                 "ota": rate.get("name", ""),
                 "ota_code": rate.get("code", ""),
                 "price": price_per_night,
+                "price_net": rate_net,
+                "tax": tax,
                 "price_total": total_price,
                 "currency": currency,
                 "check_in": check_in,
@@ -1007,12 +1015,16 @@ def rate_checker_app():
                         st.info(f"Prezzo totale per {num_nights} notti: {currency_symbol}{min_price_total:.2f} via {min_ota_total}")
                     
                     st.subheader("Dettaglio tariffe per tutte le OTA")
-                    columns_to_show = ["ota", "price", "price_total"]
+                    columns_to_show = ["ota", "price_net", "tax", "price", "price_total"]
                     display_df = hotel_df[columns_to_show].sort_values(by=price_column).copy()
+                    display_df["price_net"] = display_df["price_net"].apply(lambda x: f"{currency_symbol}{x:.2f}")
+                    display_df["tax"] = display_df["tax"].apply(lambda x: f"{currency_symbol}{x:.2f}")
                     display_df["price"] = display_df["price"].apply(lambda x: f"{currency_symbol}{x:.2f}")
                     display_df["price_total"] = display_df["price_total"].apply(lambda x: f"{currency_symbol}{x:.2f}")
-                    display_df.columns = ["OTA", f"Prezzo per notte ({currency_symbol})", f"Prezzo totale per {num_nights} notti ({currency_symbol})"]
+                    display_df.columns = ["OTA", f"Tariffa netta ({currency_symbol})", f"Tasse ({currency_symbol})", f"Prezzo per notte ({currency_symbol})", f"Prezzo totale {num_nights} notti ({currency_symbol})"]
                     st.dataframe(display_df, use_container_width=True)
+                    
+                    st.caption("⚠️ I prezzi possono differire di ±2€ rispetto a TripAdvisor per arrotondamenti dell'API Xotelo.")
                 
                 st.subheader("Tutte le OTA disponibili per hotel")
                 available_df = df[df["available"]]
@@ -1055,7 +1067,6 @@ def rate_checker_app():
                         start_date = today.replace(day=1)
                         months_to_show = 2
                         
-                        # Utilizziamo un approccio più semplice basato su DataFrame e tabelle
                         for month_idx in range(months_to_show):
                             month_name = start_date.strftime("%B %Y")
                             st.subheader(month_name)
@@ -1071,6 +1082,7 @@ def rate_checker_app():
                             for d in range((month_end - month_start).days + 1):
                                 current_day = month_start + timedelta(days=d)
                                 day_str = current_day.strftime("%Y-%m-%d")
+                                # FIX: weekday() già restituisce 0=Lunedì, 6=Domenica (formato ISO)
                                 weekday = current_day.weekday()
                                 
                                 price_level = "Non disponibile"
@@ -1087,49 +1099,28 @@ def rate_checker_app():
                             
                             calendar_df = pd.DataFrame(calendar_days)
                             
-                            # Creare una matrice per il calendario
+                            # FIX: Calendario con settimana Lun-Dom (0=Lun, 6=Dom)
                             weeks = []
-                            week_start = 0
+                            current_week = [None] * 7
                             
-                            # Riempiamo con giorni vuoti fino al primo giorno del mese
-                            first_day = calendar_df.iloc[0]
-                            first_week = [None] * 7
-                            for i in range(first_day["weekday"]):
-                                first_week[i] = None
-                            
-                            for i, day in enumerate(calendar_df.itertuples()):
-                                weekday = day.weekday
+                            for _, day_row in calendar_df.iterrows():
+                                wd = day_row["weekday"]  # 0=Lun, 6=Dom
                                 
-                                # Se siamo all'inizio e dobbiamo usare la prima settimana
-                                if i < 7 - first_day["weekday"]:
-                                    first_week[weekday] = {
-                                        "day": day.day,
-                                        "price_level": day.price_level
-                                    }
-                                    if weekday == 6:
-                                        weeks.append(first_week)
-                                else:
-                                    # Se è lunedì, iniziamo una nuova settimana
-                                    if weekday == 0:
-                                        current_week = [None] * 7
-                                        weeks.append(current_week)
-                                    
-                                    # Aggiungiamo il giorno alla settimana corrente
-                                    try:
-                                        weeks[-1][weekday] = {
-                                            "day": day.day,
-                                            "price_level": day.price_level
-                                        }
-                                    except IndexError:
-                                        # Se non abbiamo ancora settimane, ne creiamo una
-                                        current_week = [None] * 7
-                                        current_week[weekday] = {
-                                            "day": day.day,
-                                            "price_level": day.price_level
-                                        }
-                                        weeks.append(current_week)
+                                # Se è Lunedì e la settimana corrente ha già dei giorni, salva e crea nuova
+                                if wd == 0 and any(d is not None for d in current_week):
+                                    weeks.append(current_week)
+                                    current_week = [None] * 7
+                                
+                                current_week[wd] = {
+                                    "day": day_row["day"],
+                                    "price_level": day_row["price_level"]
+                                }
                             
-                            # Creiamo una tabella per visualizzare il calendario
+                            # Aggiungi l'ultima settimana
+                            if any(d is not None for d in current_week):
+                                weeks.append(current_week)
+                            
+                            # Header: Lun-Dom
                             header = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"]
                             rows = []
                             
@@ -1139,16 +1130,6 @@ def rate_checker_app():
                                     if day is None:
                                         row.append("")
                                     else:
-                                        # Definiamo il colore in base al livello di prezzo
-                                        if day["price_level"] == "Economico":
-                                            color = "#90EE90"  # Verde chiaro
-                                        elif day["price_level"] == "Medio":
-                                            color = "#F0E68C"  # Giallo chiaro
-                                        elif day["price_level"] == "Alto":
-                                            color = "#F08080"  # Rosso chiaro
-                                        else:
-                                            color = "#D3D3D3"  # Grigio chiaro (non disponibile)
-                                        
                                         row.append(f"{day['day']}\n{day['price_level']}")
                                 rows.append(row)
                             
@@ -1500,7 +1481,7 @@ def rate_checker_app():
                         direct_prices = available_df[available_df["ota"].str.contains("Official Site|Direct|Hotel Website", case=False, regex=True)]
                         if not direct_prices.empty:
                             st.markdown("### Prezzi diretti dell'hotel trovati")
-                            st.dataframe(direct_prices[["hotel", "ota", "price", "price_total"]])
+                            st.dataframe(direct_prices[["hotel", "ota", "price_net", "tax", "price", "price_total"]])
                         else:
                             st.warning("⚠️ Nessun prezzo diretto dell'hotel trovato. Questo potrebbe essere dovuto a:\n"
                                     "1. L'hotel non espone tariffe sul proprio sito web\n"
@@ -1581,7 +1562,7 @@ def rate_checker_app():
         """)
     
     st.sidebar.markdown("---")
-    st.sidebar.info("Versione 0.5.3 - Developed by Alessandro Merella with Xotelo API")
+    st.sidebar.info("Versione 0.5.4 - Developed by Alessandro Merella with Xotelo API")
 
 if __name__ == "__main__":
     rate_checker_app()
